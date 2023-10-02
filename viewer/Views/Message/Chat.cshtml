@@ -1,0 +1,102 @@
+﻿@using viewer.Views.Message;
+@model ChatModel
+@{
+    ViewData["Title"] = "Chat Default";
+}
+
+<html>
+<head>
+    <title>CONTOSO MEDICAL CENTER</title>
+</head>
+<body>
+    <form action="/message/setenvironment" method="post">
+        <div>
+            <label for="Environment">CPM Target Environment: </label>
+            <select id="Environment" name="Environment">
+                <option value="LOCAL">LOCAL (Won't work in deployed web app.')</option>
+                <option value="INT" selected="selected">INT</option>
+                <option value="PPE">PPE</option>
+                <option value="PROD">PROD</option>
+            </select>
+            <br />
+
+            <label for="ChannelRegistrationId">Whatsapp ChannelRegistrationId: </label>
+            <select id="ChannelRegistrationId" name="ChannelRegistrationId">
+                <option value="52b11371-748c-4757-a89c-911cd6b81aca">"52b11371-748c-4757-a89c-911cd6b81aca" (LOCAL/INT)</option>
+                <option value="873a641f-637e-47bd-8cf0-6dc7bfb52a8f">"873a641f-637e-47bd-8cf0-6dc7bfb52a8f" (PPE)</option>
+                <option value="TBD">TBD (PROD)</option>
+            </select>
+            <br />
+
+            <label for="PhoneNumber">Recipient phone number with country code (for ex:13345678890): </label>
+            <input type="text" id="PhoneNumber" name="PhoneNumber" />
+            <br />
+
+            <input type="submit" value="SetEnvironment" />
+            <br />
+
+            <label>Environment: @ViewData["Environment"]</label>
+            <br />
+            <label>ChannelRegistrationId: @ViewData["ChannelRegistrationId"]</label>
+            <br />
+            <label>PhoneNumber: @ViewData["PhoneNumber"]</label>
+            <br />
+            <br />
+        </div>
+    </form>
+    <form action="/message/send" method="post">
+        <div>
+            <label for="Message">Text to send: </label>
+            <input type="text" id="Message" name="Message" />
+            <br />
+            <label>Text sent: @ViewData["Message"]</label>
+        </div>
+        <div>
+            <input type="submit" value="Send to Whatsapp Recipient" />
+            <br />
+            <br />
+        </div>
+    </form>
+    <form action="/message/elevate" method="post">
+        <div>
+            <label for="InitialMessage">Default initial message to send (OBO User): </label>
+            <input type="text" id="InitialMessage" name="InitialMessage" />
+            <br/>
+            <input type="submit" value="EngageAI" />
+            <br />
+            <label>AI Engagement Status: @ViewData["AIEngagementStatus"]</label>
+            <br />
+            <br />
+        </div>
+    </form>
+    <form action="/message/DeliverFunctionResult" method="post">
+        <div>
+            <label for="FunctionName">Function Name: </label>
+            <select id="FunctionName" name="FunctionName">
+                <option value="RetrievePatientRegistrationInfo" selected="selected">RetrievePatientRegistrationInfo</option>
+                <option value="RegisterPatient">RegisterPatient</option>
+            </select>
+            <br />
+            <label for="FunctionResult">Function Result Object (string): </label>
+            <input type="text" id="FunctionResult" name="FunctionResult" />
+            <br />
+            <div>
+            Examples: {"patientName": "Mr. John Doe", "insuranceID": "ID23456"}
+            <br />
+            Examples: {"errorResponse": "error retrieving patient information due to invalid ID."}
+            </div>
+            <br />
+@*             <select id="FunctionResult" name="FunctionResult">
+                <option value="RetrievePatientRegistrationInfo" selected="selected">RetrievePatientRegistrationInfo FunctionResult</option>
+                <option value="RegisterPatient">RegisterPatient FunctionResult</option>
+            </select>
+ *@            
+            <input type="submit" value="DeliverFunctionResultToAI" />
+            <br />
+            <label>DeliverFunctionResult Status: @ViewData["DeliverFunctionResultStatus"]</label>
+            <br />
+            <br />
+        </div>
+    </form>
+</body>
+</html>

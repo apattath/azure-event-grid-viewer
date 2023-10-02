@@ -12,6 +12,8 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Mvc;
 using viewer.Hubs;
 using viewer.Models;
+using viewer.BusinessLogic;
+using viewer.Shared;
 
 namespace viewer.Controllers
 {
@@ -84,7 +86,7 @@ namespace viewer.Controllers
                     return await HandleGridEvents(jsonContent);
                 }
 
-                return BadRequest();                
+                return BadRequest();
             }
         }
 
@@ -129,6 +131,82 @@ namespace viewer.Controllers
                     details.Subject,
                     details.EventTime.ToLongTimeString(),
                     e.ToString());
+
+                switch(details.EventType.ToLower())
+                {
+                    case "microsoft.communication.advancedmessagereceived":
+                        return HandleAdvancedMessageReceivedEvent(details);
+                        break;
+                    case "microsoft.communication.advancedmessagedeliverystatusupdated":
+                        HandleAdvancedMessageDeliveryStatusUpdatedEvent(details);
+                        break;
+                    case "microsoft.communication.experimentalevent":
+                        HandleExperimentalAIEvents(details);
+                        break;
+                }
+            }
+
+            return Ok();
+        }
+
+        private IActionResult HandleExperimentalAIEvents(GridEvent<dynamic> details)
+        {
+            // Deserialize details.Data into AIEventType. Get the OpenAIEventType and return the appropriate view.
+            var eventData = JsonConvert.DeserializeObject<AIEventType>(details.Data.ToString());
+            var openAIEventType = eventData.OpenAIEventType;
+            switch (openAIEventType)
+            {
+                case OpenAiEventType.AIFunctionCallRequested:
+                    return HandleAIFunctionCallRequestedEvent(details);
+                    break;
+                case OpenAiEventType.AIGeneratedMessageSent:
+                    break;
+                case OpenAiEventType.AIDisengaged:
+                    break;
+            }
+
+            return Ok();
+        }
+
+        private IActionResult HandleAIFunctionCallRequestedEvent(GridEvent<dynamic> details)
+        {
+            // Deserialize details.Data into AIFunctionCallRequestedEventData. 
+            var eventData = JsonConvert.DeserializeObject<AIFunctionCallRequestedEventData>(details.Data.ToString());
+            // Extract the function name and parameters from the eventData.
+            var funcName = eventData.FunctionName;
+            var parameters = eventData.Parameters;
+
+            var availableFunctions = PatientRegistrationMethods.GetAvailableFunctions();
+            var availableFunction = availableFunctions[funcName];
+
+            // Invoke the function and return the result.
+            var functionArgs = JsonExtractionUtils.SafeExtractJsonFromLLMResponse(availableFunction.Item2, parameters);
+            object[] functionArgsArray = JsonExtractionUtils.GetPropertiesAsObjectArrayForType(availableFunction.Item2, functionArgs);
+            PatientRegistrationMethods.FunctionResponse functionResultData = availableFunction.Item1.Invoke(null, functionArgsArray.ToArray()) as PatientRegistrationMethods.FunctionResponse;
+
+            return RedirectToAction(
+                "deliverFunctionResult",
+                "Message",
+                new 
+                { 
+                    functionResult = JsonConvert.SerializeObject(functionResultData),
+                    functionName = funcName
+                });
+        }
+
+        private IActionResult HandleAdvancedMessageDeliveryStatusUpdatedEvent(GridEvent<dynamic> details)
+        {
+            return Ok();
+        }
+
+        private IActionResult HandleAdvancedMessageReceivedEvent(GridEvent<dynamic> details)
+        {
+            AdvancedMessageReceivedEventData eventData = JsonConvert.DeserializeObject<AdvancedMessageReceivedEventData>(details.Data.ToString());
+            ViewData["Message"] = ViewData["Message"]?.ToString() + $"\nCustomer: {eventData.Content}";
+
+            if (eventData.Content.Contains("escalate", StringComparison.OrdinalIgnoreCase))
+            {
+                return RedirectToAction("elevate", "Message", new { message = eventData.Content });
             }
 
             return Ok();

@@ -1,10 +1,12 @@
-﻿using System;
+﻿using Azure.Communication.Messages;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using viewer.Models;
+using Azure;
 
 namespace viewer.Controllers
 {
@@ -22,7 +24,7 @@ namespace viewer.Controllers
             return View();
         }
 
-        public IActionResult Contact()
+        public async Task<IActionResult> Contact()
         {
             ViewData["Message"] = "Your contact page.";
 
