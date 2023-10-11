@@ -17,7 +17,8 @@ namespace viewer
 
     public enum TargetEnvironment
     {
-        LOCAL = 0,
+        LOCALINT = 0,
+        LOCALPPE,
         INT,
         PPE,
         PROD
@@ -26,12 +27,20 @@ namespace viewer
     public class EnvironmentManagerService
     {
         private TargetEnvironment currentTargetEnvironment = TargetEnvironment.INT;
-        private EnvironmentSpecificParams localParams = new EnvironmentSpecificParams()
+        private EnvironmentSpecificParams localIntParams = new EnvironmentSpecificParams()
         {
             ChannelRegistrationId = "52b11371-748c-4757-a89c-911cd6b81aca",
-            AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_LOCAL"),
+            AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT"),
             CpmEndpoint = "https://localhost:8997/",
-            AccessKey = ParseAccessKeyFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_LOCAL")),
+            AccessKey = ParseAccessKeyFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT")),
+        };
+
+        private EnvironmentSpecificParams localPpeParams = new EnvironmentSpecificParams()
+        {
+            ChannelRegistrationId = "873a641f-637e-47bd-8cf0-6dc7bfb52a8f",
+            AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE"),
+            CpmEndpoint = "https://localhost:8997/",
+            AccessKey = ParseAccessKeyFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE")),
         };
 
         private EnvironmentSpecificParams intParams = new EnvironmentSpecificParams()
@@ -56,7 +65,8 @@ namespace viewer
         {
             currentSelectedParams = currentTargetEnvironment switch
             {
-                TargetEnvironment.LOCAL => localParams,
+                TargetEnvironment.LOCALINT => localIntParams,
+                TargetEnvironment.LOCALPPE => localPpeParams,
                 TargetEnvironment.INT => intParams,
                 TargetEnvironment.PPE => ppeParams,
                 _ => throw new ArgumentException($"Invalid target environment: {currentTargetEnvironment}"),
@@ -69,7 +79,8 @@ namespace viewer
         {
             currentTargetEnvironment = environment.ToLower() switch
             {
-                "local" => TargetEnvironment.LOCAL,
+                "localint" => TargetEnvironment.LOCALINT,
+                "localppe" => TargetEnvironment.LOCALPPE,
                 "int" => TargetEnvironment.INT,
                 "ppe" => TargetEnvironment.PPE,
                 _ => throw new ArgumentException($"Invalid target environment: {environment}"),
@@ -77,7 +88,8 @@ namespace viewer
 
             currentSelectedParams = currentTargetEnvironment switch
             {
-                TargetEnvironment.LOCAL => localParams,
+                TargetEnvironment.LOCALINT => localIntParams,
+                TargetEnvironment.LOCALPPE => localPpeParams,
                 TargetEnvironment.INT => intParams,
                 TargetEnvironment.PPE => ppeParams,
                 _ => throw new ArgumentException($"Invalid target environment: {currentTargetEnvironment}"),
@@ -128,5 +140,20 @@ namespace viewer
             }
         }
 
+        internal bool IsEventForCurrentSelectedParams(string phoneNumber, string channelRegistrationId)
+        {
+            if (currentSelectedParams == default)
+            {
+                return false;
+            }
+
+            if (currentSelectedParams.RecipientList.Contains(phoneNumber) && 
+                currentSelectedParams.ChannelRegistrationId.Equals(channelRegistrationId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
     }
 }

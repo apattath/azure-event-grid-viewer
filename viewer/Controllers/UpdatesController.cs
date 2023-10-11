@@ -31,14 +31,18 @@ namespace viewer.Controllers
                "Notification";
 
         private readonly IHubContext<GridEventsHub> _hubContext;
+        private readonly EnvironmentManagerService environmentManagerService;
 
         #endregion
 
         #region Constructors
 
-        public UpdatesController(IHubContext<GridEventsHub> gridEventsHubContext)
+        public UpdatesController(
+            IHubContext<GridEventsHub> gridEventsHubContext,
+            EnvironmentManagerService environmentManagerService)
         {
             this._hubContext = gridEventsHubContext;
+            this.environmentManagerService = environmentManagerService ?? throw new ArgumentNullException(nameof(environmentManagerService));
         }
 
         #endregion
@@ -132,19 +136,48 @@ namespace viewer.Controllers
                     details.EventTime.ToLongTimeString(),
                     e.ToString());
 
-                switch(details.EventType.ToLower())
+                switch (details.EventType.ToLower())
                 {
                     case "microsoft.communication.advancedmessagereceived":
                         return HandleAdvancedMessageReceivedEvent(details);
                         break;
                     case "microsoft.communication.advancedmessagedeliverystatusupdated":
-                        HandleAdvancedMessageDeliveryStatusUpdatedEvent(details);
+                        return HandleAdvancedMessageDeliveryStatusUpdatedEvent(details);
                         break;
+                    case "microsoft.communication.aigeneratedmessagesent":
+                        return HandleAIMessageSentEvent(details);
+                        break;
+                    case "microsoft.communication.aifunctioncallrequested":
+                        return HandleAIFunctionCallRequestedEvent(details);
+                        break;
+                    case "microsoft.communication.aidisengaged":
+                        return HandleAIDisengagedEvent(details);
+                        break;
+                    case "microsoft.communication.experimental":
                     case "microsoft.communication.experimentalevent":
-                        HandleExperimentalAIEvents(details);
+                        return HandleExperimentalAIEvents(details);
                         break;
+                    default:
+                        throw new Exception($"Unknown event type: {details.EventType}");
                 }
             }
+
+            return Ok();
+        }
+
+        private IActionResult HandleAIDisengagedEvent(GridEvent<dynamic> details)
+        {
+            // Deserialize details.Data into AIDisengagedEventData. 
+            AIDisengagedEventData eventData = JsonConvert.DeserializeObject<AIDisengagedEventData>(details.Data.ToString());
+
+            // If this event is not for the current selected combination of 'To' and 'ChannelRegistrationId', then ignore it.
+            if (!environmentManagerService.IsEventForCurrentSelectedParams(eventData.To, eventData.ChannelRegistrationId.ToString()))
+            {
+                return Ok();
+            }
+
+            var disengagedReason = eventData.AIDisengagementReason;
+            Console.WriteLine($"AI Disengaged: {disengagedReason}");
 
             return Ok();
         }
@@ -171,10 +204,17 @@ namespace viewer.Controllers
         private IActionResult HandleAIFunctionCallRequestedEvent(GridEvent<dynamic> details)
         {
             // Deserialize details.Data into AIFunctionCallRequestedEventData. 
-            var eventData = JsonConvert.DeserializeObject<AIFunctionCallRequestedEventData>(details.Data.ToString());
+            AIFunctionCallRequestedEventData eventData = JsonConvert.DeserializeObject<AIFunctionCallRequestedEventData>(details.Data.ToString());
+
+            // If this event is not for the current selected combination of 'To' and 'ChannelRegistrationId', then ignore it.
+            if (!environmentManagerService.IsEventForCurrentSelectedParams(eventData.To, eventData.ChannelRegistrationId.ToString()))
+            {
+                return Ok();
+            }
+
             // Extract the function name and parameters from the eventData.
             var funcName = eventData.FunctionName;
-            var parameters = eventData.Parameters;
+            var parameters = eventData.FunctionParameters.ToString();
 
             var availableFunctions = PatientRegistrationMethods.GetAvailableFunctions();
             var availableFunction = availableFunctions[funcName];
@@ -184,14 +224,50 @@ namespace viewer.Controllers
             object[] functionArgsArray = JsonExtractionUtils.GetPropertiesAsObjectArrayForType(availableFunction.Item2, functionArgs);
             PatientRegistrationMethods.FunctionResponse functionResultData = availableFunction.Item1.Invoke(null, functionArgsArray.ToArray()) as PatientRegistrationMethods.FunctionResponse;
 
-            return RedirectToAction(
-                "deliverFunctionResult",
-                "Message",
-                new 
-                { 
-                    functionResult = JsonConvert.SerializeObject(functionResultData),
-                    functionName = funcName
-                });
+            // if funcName is EndOfConversation, then additionally disengage AI also
+            if (funcName.Equals(nameof(PatientRegistrationMethods.DetectedEndOfConversation), StringComparison.OrdinalIgnoreCase))
+            {
+                var resultOfDeelevate = RedirectToAction(
+                    "deelevate",
+                    "Message",
+                    new
+                    {
+                        initialMessage = functionArgsArray?[0]?.ToString(),
+                    });
+
+                return resultOfDeelevate;
+            }
+            else
+            {
+                var resultOfDeliverFunctionResult = RedirectToAction(
+                    "DeliverFunctionResult",
+                    "Message",
+                    new
+                    {
+                        functionResult = JsonConvert.SerializeObject(functionResultData),
+                        functionName = funcName
+                    });
+
+                return resultOfDeliverFunctionResult;
+            }
+        }
+
+        private IActionResult HandleAIMessageSentEvent(GridEvent<dynamic> details)
+        {
+            // Deserialize details.Data into AIMessageSentEventData. 
+            var eventData = JsonConvert.DeserializeObject<AIMessageSentEventData>(details.Data.ToString());
+
+            // If this event is not for the current selected combination of 'To' and 'ChannelRegistrationId', then ignore it.
+            if (!environmentManagerService.IsEventForCurrentSelectedParams(eventData.To, eventData.ChannelRegistrationId.ToString()))
+            {
+                return Ok();
+            }
+
+            // print Content
+            var content = eventData.Content;
+            Console.WriteLine($"Content: {content}");
+
+            return Ok();
         }
 
         private IActionResult HandleAdvancedMessageDeliveryStatusUpdatedEvent(GridEvent<dynamic> details)
@@ -202,11 +278,25 @@ namespace viewer.Controllers
         private IActionResult HandleAdvancedMessageReceivedEvent(GridEvent<dynamic> details)
         {
             AdvancedMessageReceivedEventData eventData = JsonConvert.DeserializeObject<AdvancedMessageReceivedEventData>(details.Data.ToString());
+
+            // If this event is not for the current selected combination of 'To' and 'ChannelRegistrationId', then ignore it.
+            if (!environmentManagerService.IsEventForCurrentSelectedParams(eventData.From, eventData.To))
+            {
+                return Ok();
+            }
+
             ViewData["Message"] = ViewData["Message"]?.ToString() + $"\nCustomer: {eventData.Content}";
 
-            if (eventData.Content.Contains("escalate", StringComparison.OrdinalIgnoreCase))
+            IList<string> escalationWords = new List<string> { "urgent", "escalate", "emergency" };
+            IList<string> deescalationWords = new List<string> { "resolved", "bye", "resolution" };
+
+            if (escalationWords.Any(word => eventData.Content.Contains(word, StringComparison.OrdinalIgnoreCase)))
             {
-                return RedirectToAction("elevate", "Message", new { message = eventData.Content });
+                return RedirectToAction("elevate", "Message", new { initialMessage = eventData.Content });
+            }
+            else if (deescalationWords.Any(word => eventData.Content.Contains(word, StringComparison.OrdinalIgnoreCase)))
+            {
+                return RedirectToAction("deelevate", "Message", new { initialMessage = eventData.Content });
             }
 
             return Ok();

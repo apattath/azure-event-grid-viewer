@@ -112,7 +112,7 @@ internal class JsonExtractionUtils
         {
             if (type.Name.Equals("Int32"))
             {
-                aIFunctionParameterDto.Type = Enum.Parse<AIFunctionParameterType>(JsonExtractionUtils.IntegerValue, ignoreCase: true);
+                aIFunctionParameterDto.Type = AIFunctionParameterType.Number;
                 return aIFunctionParameterDto;
             }
             else
@@ -125,13 +125,13 @@ internal class JsonExtractionUtils
 
         if (typeof(string).IsAssignableFrom(type))
         {
-            aIFunctionParameterDto.Type = Enum.Parse<AIFunctionParameterType>(JsonExtractionUtils.StringValue, ignoreCase: true);
+            aIFunctionParameterDto.Type = AIFunctionParameterType.String;
             return aIFunctionParameterDto;
         }
 
         if (type.IsEnum)
         {
-            aIFunctionParameterDto.Type = Enum.Parse<AIFunctionParameterType>(JsonExtractionUtils.StringValue, ignoreCase: true);
+            aIFunctionParameterDto.Type = AIFunctionParameterType.String;
 
             var enumValues = new List<string>();
             foreach (var enumvalue in type.GetEnumValues())
@@ -144,29 +144,31 @@ internal class JsonExtractionUtils
             return aIFunctionParameterDto;
         }
 
-        // ToDo: Implement for array
+        // ToDo: Add support for arrays 
         //if (typeof(IEnumerable).IsAssignableFrom(type))
         //{
         //    var dictInterface = type.GetInterfaces().FirstOrDefault(i => i.Name.StartsWith("IDictionary"));
         //    if (dictInterface != default)
         //    {
-        //        propertyInfoJson.Add(JsonExtractionUtils.TypeDescriber, JsonExtractionUtils.ObjectValue);
-        //        return propertyInfoJson;
+        //        aIFunctionParameterDto.Type = AIFunctionParameterType.Object;
+        //        return aIFunctionParameterDto;
         //    }
 
         //    var listInterface = type.GetInterfaces().FirstOrDefault(i => i.Name.StartsWith("IEnumerable"));
         //    if (listInterface != default && listInterface.GetGenericArguments()[0] != type)
         //    {
-        //        propertyInfoJson.Add(JsonExtractionUtils.TypeDescriber, ListParameterValue);
-        //        propertyInfoJson.Add(JsonExtractionUtils.ListParameterItemsValue, GetPropertyDescription(listInterface.GetGenericArguments()[0]));
-        //        return propertyInfoJson;
+        //        aIFunctionParameterDto.Type = AIFunctionParameterType.Array;
+        //        Type underlyingType = listInterface.GetGenericArguments()[0];
+        //        var underlyingTypeProperty = new PropertyInfo();
+        //        aIFunctionParameterDto.ArrayItemParameter = GetAIFunctionParameterDto(properties.FirstOrDefault());
+        //        return aIFunctionParameterDto;
         //    }
 
-        //    propertyInfoJson.Add(JsonExtractionUtils.TypeDescriber, "object");
-        //    return propertyInfoJson;
+        //    aIFunctionParameterDto.Type = AIFunctionParameterType.Object;
+        //    return aIFunctionParameterDto;
         //}
 
-        aIFunctionParameterDto.Type = Enum.Parse<AIFunctionParameterType>(JsonExtractionUtils.ObjectValue, ignoreCase: true);
+        aIFunctionParameterDto.Type = AIFunctionParameterType.Object;
         var objectParameterProperties = new List<AIFunctionParameterDto>();
 
         foreach (var property in type.GetProperties())

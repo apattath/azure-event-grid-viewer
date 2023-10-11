@@ -17,7 +17,7 @@ internal static class PatientRegistrationMethods
     {
         ["johndoeID12345"] = new PatientAppointmentInfo
         {
-            Symptoms = new List<string> { "headache", "fever" },
+            Symptoms = "headache, fever",
             PreferredDoctorName = "Dr. Bob Seuss",
             PreferredAppointmentTimes = new List<DateTime>
             {
@@ -30,7 +30,7 @@ internal static class PatientRegistrationMethods
         },
         ["janedoeID45678"] = new PatientAppointmentInfo
         {
-            Symptoms = new List<string> { "itchy eyes", "redness" },
+            Symptoms = "itchy eyes, redness",
             PreferredDoctorName = "Dr. Bob Seuss",
             PreferredAppointmentTimes = new List<DateTime>
             {
@@ -156,7 +156,7 @@ internal static class PatientRegistrationMethods
     }
 
     // A method GatherSymptoms that gets patient's symptoms as arguments and stores it in the PatientAppointmentInfo object
-    public static FunctionResponse StoreSymptoms(string firstName, string lastName, string insuranceId, List<string> symptoms)
+    public static FunctionResponse StoreSymptoms(string firstName, string lastName, string insuranceId, string symptoms)
     {
         string errorMessage = string.Empty;
         // Console.WriteLine($"FunctionCalled: FunctionName = {nameof(StoreSymptoms)}, Parameters = {firstName},{lastName},{insuranceId},symptoms:");
@@ -178,7 +178,7 @@ internal static class PatientRegistrationMethods
             return new FunctionResponse(errorMessage, null);
         }
 
-        if (symptoms == null || symptoms.Count == 0)
+        if (string.IsNullOrWhiteSpace(symptoms))
         {
             errorMessage = "Symptoms are empty. Ask patient to provide list of symptoms.";
             // Console.WriteLine($"FunctionResponse: {errorMessage}");
@@ -226,7 +226,7 @@ internal static class PatientRegistrationMethods
         patientRegistrations[patientKey].PreferredDoctorName = preferredDoctorName;
 
         // check if previous step done: check if the registered patient's PatientAppointmentInfo has Symptoms property filled
-        if (patientRegistrations[patientKey].Symptoms == null || patientRegistrations[patientKey].Symptoms.Count == 0)
+        if (string.IsNullOrWhiteSpace(patientRegistrations[patientKey].Symptoms))
         {
             errorMessage = "Preferred doctor details are stored, but patient symptoms are not gathered yet.";
             // Console.WriteLine($"FunctionResponse: {errorMessage}");
@@ -237,7 +237,7 @@ internal static class PatientRegistrationMethods
     }
 
     // A method similar to above to store patient's preferred time slots as a list of strings, which is then parsed into a list of DateTime objects
-    public static FunctionResponse StorePreferredTimeSlots(string firstName, string lastName, string insuranceId, List<string> preferredTimeSlots)
+    public static FunctionResponse StorePreferredTimeSlots(string firstName, string lastName, string insuranceId, string preferredTimeSlots)
     {
         string errorMessage = string.Empty;
         // Console.WriteLine($"FunctionCalled: FunctionName = {nameof(StorePreferredTimeSlots)}, Parameters = {firstName},{lastName},{insuranceId},preferredTimeSlots:");
@@ -261,7 +261,7 @@ internal static class PatientRegistrationMethods
 
         // check if previous step done: check if the registered patient's PatientAppointmentInfo has Symptoms property filled
         var patientKey = GetRegistrationKey(firstName, lastName, insuranceId);
-        if (patientRegistrations[patientKey].Symptoms == null || patientRegistrations[patientKey].Symptoms.Count == 0)
+        if (string.IsNullOrWhiteSpace(patientRegistrations[patientKey].Symptoms))
         {
             errorMessage = "Patient symptoms are not gathered yet.";
             // Console.WriteLine($"FunctionResponse: {errorMessage}");
@@ -269,7 +269,7 @@ internal static class PatientRegistrationMethods
         }
 
         // check if preferred time slots are empty
-        if (preferredTimeSlots == null || preferredTimeSlots.Count == 0)
+        if (string.IsNullOrWhiteSpace(preferredTimeSlots))
         {
             errorMessage = "Preferred time slots are empty.";
             // Console.WriteLine($"FunctionResponse: {errorMessage}");
@@ -278,7 +278,8 @@ internal static class PatientRegistrationMethods
 
         // parse preferred time slots into a list of DateTime objects
         List<DateTime> preferredTimeSlotsDateTime = new List<DateTime>();
-        foreach (var timeSlot in preferredTimeSlots)
+        var timeSlots = preferredTimeSlots.Split(',');
+        foreach (var timeSlot in timeSlots)
         {
             if (DateTime.TryParse(timeSlot, out DateTime timeSlotDateTime))
             {
@@ -422,7 +423,7 @@ internal static class PatientRegistrationMethods
         }
 
         var patientKey = GetRegistrationKey(firstName, lastName, insuranceId);
-        if (patientRegistrations[patientKey].Symptoms == null || patientRegistrations[patientKey].Symptoms.Count == 0)
+        if (string.IsNullOrWhiteSpace(patientRegistrations[patientKey].Symptoms))
         {
             errorMessage = "Patient symptoms are not gathered yet.";
             // Console.WriteLine($"FunctionResponse: {errorMessage}");
@@ -472,6 +473,12 @@ internal static class PatientRegistrationMethods
         return new FunctionResponse(string.Empty, patientRegistrations[patientKey]);
     }
 
+    public static FunctionResponse DetectedEndOfConversation(string endOfConversationReason)
+    {
+        Console.WriteLine($"FunctionCalled: FunctionName = {nameof(DetectedEndOfConversation)}, Parameters = {endOfConversationReason}");
+        return new FunctionResponse(string.Empty, null);
+    }
+
     private static (bool, DateTime?) GetDoctorAvailability(string preferredDoctorName, List<DateTime> preferredAppointmentTimes)
     {
         if (preferredDoctorName.EndsWith("bob seuss", StringComparison.OrdinalIgnoreCase) ||
@@ -499,6 +506,7 @@ internal static class PatientRegistrationMethods
         availableFunctions.Add(nameof(CheckPreferredDoctorAvailabilityAndScheduleVisit), (patientRegistrationMethodsType.GetMethod(nameof(CheckPreferredDoctorAvailabilityAndScheduleVisit)), typeof(PatientRegistrationParameters)));
         availableFunctions.Add(nameof(ScheduleAppointmentWithAGivenDoctor), (patientRegistrationMethodsType.GetMethod(nameof(ScheduleAppointmentWithAGivenDoctor)), typeof(ScheduleGivenDoctorAndTimeParameters)));
         availableFunctions.Add(nameof(ScheduleAppointmentWithOnCallDoctor), (patientRegistrationMethodsType.GetMethod(nameof(ScheduleAppointmentWithOnCallDoctor)), typeof(PatientRegistrationParameters)));
+        availableFunctions.Add(nameof(DetectedEndOfConversation), (patientRegistrationMethodsType.GetMethod(nameof(DetectedEndOfConversation)), typeof(EndOfConversationParameters)));
 
         return availableFunctions;
     }
@@ -520,46 +528,53 @@ internal static class PatientRegistrationMethods
             "Registers a new patient. If successful, the function returns the registered patient details, else an error message.",
             typeof(PatientRegistrationParameters));
 
-        //var storeSymptomsFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
-        //    nameof(StoreSymptoms),
-        //    "Stores symptoms from the patient. If successful, the function returns the registered patient details, else an error message.",
-        //    typeof(StoreSymptomsParameters));
+        var storeSymptomsFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
+            nameof(StoreSymptoms),
+            "Stores symptoms from the patient. If successful, the function returns the registered patient details, else an error message.",
+            typeof(StoreSymptomsParameters));
 
-        //var storePreferredDoctorDetailsFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
-        //    nameof(StorePreferredDoctorDetails),
-        //    "Stores the patient's preferred doctor's name. If successful, the function returns the registered patient details, else an error message.",
-        //    typeof(StorePreferredDoctorDetailsParameters));
+        var storePreferredDoctorDetailsFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
+            nameof(StorePreferredDoctorDetails),
+            "Stores the patient's preferred doctor's name. If successful, the function returns the registered patient details, else an error message.",
+            typeof(StorePreferredDoctorDetailsParameters));
 
-        //var storePreferredTimeSlotsFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
-        //    nameof(StorePreferredTimeSlots),
-        //    "Stores preferred appointment time slots as a list of strings in C# DateTime format from the patient. If successful, the function returns the registered patient details, else an error message.",
-        //    typeof(StorePreferredTimeSlotsParameters));
+        var storePreferredTimeSlotsFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
+            nameof(StorePreferredTimeSlots),
+            "Stores preferred appointment time slots as a list of strings in C# DateTime format from the patient. If successful, the function returns the registered patient details, else an error message.",
+            typeof(StorePreferredTimeSlotsParameters));
 
-        //var checkPreferredDoctorAvailabilityAndScheduleVisitFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
-        //    nameof(CheckPreferredDoctorAvailabilityAndScheduleVisit),
-        //    "Checks if the preferred doctor is available during any of the patient's preferred time slots. If available, it schedules the appointment and returns the appointment details. If not available, it returns a list of alternate doctors and time slots.",
-        //    typeof(PatientRegistrationParameters));
+        var checkPreferredDoctorAvailabilityAndScheduleVisitFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
+            nameof(CheckPreferredDoctorAvailabilityAndScheduleVisit),
+            "Checks if the preferred doctor is available during any of the patient's preferred time slots. If available, it schedules the appointment and returns the appointment details. If not available, it returns a list of alternate doctors and time slots.",
+            typeof(PatientRegistrationParameters));
 
-        //var scheduleAppointmentWithAGivenDoctorFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
-        //    nameof(ScheduleAppointmentWithAGivenDoctor),
-        //    "Schedules an appointment with the given doctor in the given time slot and returns the appointment details.",
-        //    typeof(ScheduleGivenDoctorAndTimeParameters));
+        var scheduleAppointmentWithAGivenDoctorFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
+            nameof(ScheduleAppointmentWithAGivenDoctor),
+            "Schedules an appointment with the given doctor in the given time slot and returns the appointment details.",
+            typeof(ScheduleGivenDoctorAndTimeParameters));
 
-        //var scheduleAppointmentWithOnCallDoctorFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
-        //    nameof(ScheduleAppointmentWithOnCallDoctor),
-        //    "Schedules an appointment with the on-call doctor during one of the patient's preferred time slot. If successful, the function returns the appointment details, else an error message.",
-        //    typeof(PatientRegistrationParameters));
+        var scheduleAppointmentWithOnCallDoctorFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
+            nameof(ScheduleAppointmentWithOnCallDoctor),
+            "Schedules an appointment with the on-call doctor during one of the patient's preferred time slot. If successful, the function returns the appointment details, else an error message.",
+            typeof(PatientRegistrationParameters));
+
+        var endOfConversationFunctionDefinition = JsonExtractionUtils.GetFunctionDefinition(
+            nameof(DetectedEndOfConversation),
+            "This function should be called by AI when it detects the end of a conversation with the patient (either because their issue is resolved or they explicitly express their wish to discontinue the conversation). " +
+            "The function returns nothing.",
+            typeof(EndOfConversationParameters));
 
         return new List<AIFunctionDto>
         {
             retrievePatientFunctionDefinition,
             registerPatientFunctionDefinition,
-            //storeSymptomsFunctionDefinition,
-            //storePreferredDoctorDetailsFunctionDefinition,
-            //storePreferredTimeSlotsFunctionDefinition,
-            //checkPreferredDoctorAvailabilityAndScheduleVisitFunctionDefinition,
-            //scheduleAppointmentWithAGivenDoctorFunctionDefinition,
-            //scheduleAppointmentWithOnCallDoctorFunctionDefinition
+            storeSymptomsFunctionDefinition,
+            storePreferredDoctorDetailsFunctionDefinition,
+            storePreferredTimeSlotsFunctionDefinition,
+            checkPreferredDoctorAvailabilityAndScheduleVisitFunctionDefinition,
+            scheduleAppointmentWithAGivenDoctorFunctionDefinition,
+            scheduleAppointmentWithOnCallDoctorFunctionDefinition,
+            endOfConversationFunctionDefinition,
         };
     }
 
@@ -587,6 +602,13 @@ internal static class PatientRegistrationMethods
             FunctionResult = functionResult;
         }
     }
+}
+
+internal class EndOfConversationParameters
+{
+    [JsonProperty("endOfConversationReason")]
+    [PropertyDescription("The reason (as detected by the AI) as to why the conversation was ended. For example PatientDiscontinue, IssueResolved, PatientNonResponsive are all valid values.")]
+    public string EndOfConversationReason { get; set; }
 }
 
 internal class ScheduleGivenDoctorAndTimeParameters
@@ -653,9 +675,9 @@ public class StoreSymptomsParameters
     public string InsuranceId { get; set; }
 
     [JsonProperty("symptoms")]
-    [PropertyDescription("The list of patient's symptoms")]
+    [PropertyDescription("Comma-separated list of patient's symptoms.")]
     [JsonRequired]
-    public List<string> Symptoms { get; set; }
+    public string Symptoms { get; set; }
 }
 
 public class StorePreferredDoctorDetailsParameters
@@ -699,14 +721,14 @@ public class StorePreferredTimeSlotsParameters
     public string InsuranceId { get; set; }
 
     [JsonProperty("preferredAppointmentTimes")]
-    [PropertyDescription("The list of patient's preferred appointment times")]
+    [PropertyDescription("Comma-separated list of patient's preferred appointment times")]
     [JsonRequired]
-    public List<string> PreferredAppointmentTimes { get; set; }
+    public string PreferredAppointmentTimes { get; set; }
 }
 
 public class PatientAppointmentInfo
 {
-    public List<string> Symptoms { get; set; }
+    public string Symptoms { get; set; }
 
     public string PreferredDoctorName { get; set; }
 

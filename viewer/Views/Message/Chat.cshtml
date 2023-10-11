@@ -13,18 +13,43 @@
         <div>
             <label for="Environment">CPM Target Environment: </label>
             <select id="Environment" name="Environment">
-                <option value="LOCAL">LOCAL (Won't work in deployed web app.')</option>
+@*
                 <option value="INT" selected="selected">INT</option>
+*@
+
                 <option value="PPE">PPE</option>
                 <option value="PROD">PROD</option>
+
+@*
+                <option value="INT" selected="selected">INT</option>
+                <option value="LOCALINT">LOCAL with INT (Won't work in deployed web app.')</option>
+                <option value="LOCALPPE">LOCAL with PPE (Won't work in deployed web app.')</option>
+                <option value="PPE">PPE</option>
+                <option value="PROD">PROD</option>
+*@            
             </select>
             <br />
 
             <label for="ChannelRegistrationId">Whatsapp ChannelRegistrationId: </label>
             <select id="ChannelRegistrationId" name="ChannelRegistrationId">
-                <option value="52b11371-748c-4757-a89c-911cd6b81aca">"52b11371-748c-4757-a89c-911cd6b81aca" (LOCAL/INT)</option>
+@* 
+                <option value="52b11371-748c-4757-a89c-911cd6b81aca">"52b11371-748c-4757-a89c-911cd6b81aca" (INT)</option>
+                <option value="08c04423-72c7-4660-bfc6-610b190fc44b">"08c04423-72c7-4660-bfc6-610b190fc44b" (INT)</option>
+*@
+
                 <option value="873a641f-637e-47bd-8cf0-6dc7bfb52a8f">"873a641f-637e-47bd-8cf0-6dc7bfb52a8f" (PPE)</option>
+                <option value="b82d9eb3-a12b-4010-aecc-30db74de9603">"b82d9eb3-a12b-4010-aecc-30db74de9603" (PPE)</option>
+                <option value="65bd3259-1317-4567-a8af-4af4ef811d60">"65bd3259-1317-4567-a8af-4af4ef811d60" (PPE)</option>
+
+
+@*
+                <option value="52b11371-748c-4757-a89c-911cd6b81aca">"52b11371-748c-4757-a89c-911cd6b81aca" (INT)</option>
+                <option value="08c04423-72c7-4660-bfc6-610b190fc44b">"08c04423-72c7-4660-bfc6-610b190fc44b" (INT)</option>
+                <option value="873a641f-637e-47bd-8cf0-6dc7bfb52a8f">"873a641f-637e-47bd-8cf0-6dc7bfb52a8f" (PPE)</option>
+                <option value="b82d9eb3-a12b-4010-aecc-30db74de9603">"b82d9eb3-a12b-4010-aecc-30db74de9603" (PPE)</option>
+                <option value="65bd3259-1317-4567-a8af-4af4ef811d60">"65bd3259-1317-4567-a8af-4af4ef811d60" (PPE)</option>
                 <option value="TBD">TBD (PROD)</option>
+*@
             </select>
             <br />
 
@@ -44,6 +69,9 @@
             <br />
         </div>
     </form>
+    <hr style="height:2px; border:0; border-top:2px dashed brown;">
+    <h1>Use below for Debugging Purposes</h1>
+    <hr style="height:2px; border:0; border-top:2px dashed brown;">
     <form action="/message/send" method="post">
         <div>
             <label for="Message">Text to send: </label>
@@ -59,12 +87,24 @@
     </form>
     <form action="/message/elevate" method="post">
         <div>
-            <label for="InitialMessage">Default initial message to send (OBO User): </label>
-            <input type="text" id="InitialMessage" name="InitialMessage" />
+            <label for="InitialMessage">Accompanying initial user message to send: </label>
+            <input type="text" id="InitialMessage" name="InitialMessage" value="Hi, I need some assistance." />
             <br/>
             <input type="submit" value="EngageAI" />
             <br />
             <label>AI Engagement Status: @ViewData["AIEngagementStatus"]</label>
+            <br />
+            <br />
+        </div>
+    </form>
+    <form action="/message/deelevate" method="post">
+        <div>
+            <label for="InitialMessage">Accompanying user message to send: </label>
+            <input type="text" id="InitialMessage" name="InitialMessage" value="Thank you for your assistance." />
+            <br />
+            <input type="submit" value="DisengageAI" />
+            <br />
+            <label>AI Disengagement Status: @ViewData["AIDisengagementStatus"]</label>
             <br />
             <br />
         </div>
@@ -75,6 +115,12 @@
             <select id="FunctionName" name="FunctionName">
                 <option value="RetrievePatientRegistrationInfo" selected="selected">RetrievePatientRegistrationInfo</option>
                 <option value="RegisterPatient">RegisterPatient</option>
+                <option value="StoreSymptoms">StoreSymptoms</option>
+                <option value="StorePreferredDoctorDetails">StorePreferredDoctorDetails</option>
+                <option value="StorePreferredTimeSlots">StorePreferredTimeSlots</option>
+                <option value="CheckPreferredDoctorAvailabilityAndScheduleVisit">CheckPreferredDoctorAvailabilityAndScheduleVisit</option>
+                <option value="ScheduleAppointmentWithAGivenDoctor">ScheduleAppointmentWithAGivenDoctor</option>
+                <option value="ScheduleAppointmentWithOnCallDoctor">ScheduleAppointmentWithOnCallDoctor</option>
             </select>
             <br />
             <label for="FunctionResult">Function Result Object (string): </label>

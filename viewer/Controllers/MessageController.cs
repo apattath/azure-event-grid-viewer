@@ -24,6 +24,7 @@ namespace viewer.Controllers
     {
 
         private readonly string MessagingAIElevateEndpoint = "messages/ai/elevate";
+        private readonly string MessagingAIDeElevateEndpoint = "messages/ai/disengage";
         private readonly string MessagingAIDeliveryFunctionResultEndpoint = "messages/ai/deliverFunctionResults";
         private readonly string MessagingAIApiVersion = "api-version=2023-11-01-preview";
 
@@ -64,17 +65,19 @@ namespace viewer.Controllers
 
         public async Task<IActionResult> Send(string message)
         {
-            var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
-
-            ViewData["Message"] = ViewData["Message"]?.ToString() + $"\nContoso: {message}";
-            var sendTextMessageOptions = new SendMessageOptions(currentSelectedParams.ChannelRegistrationId, currentSelectedParams.RecipientList, message);
-            Response<SendMessageResult> sendTextMessageResult = await currentSelectedParams.notificationMessagesClient.SendMessageAsync(sendTextMessageOptions);
+            await SendMessageToUserAsync(message);
 
             return View("Chat");
         }
 
         public async Task<IActionResult> Elevate(string initialMessage)
         {
+            // set a default if no initial message was sent.
+            if (string.IsNullOrEmpty(initialMessage))
+            {
+                initialMessage = "Hi, I need some assistance.";
+            }
+
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
             // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
@@ -95,6 +98,7 @@ namespace viewer.Controllers
                 httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
             {
                 ViewData["AIEngagementStatus"] = "Enabled";
+                await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
             }
             else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
@@ -110,6 +114,55 @@ namespace viewer.Controllers
             foreach (var header in httpResponseMessage.Headers)
             {
                 ViewData["AIEngagementStatus"] = ViewData["AIEngagementStatus"]?.ToString() + $"\n{header.Key}: {header.Value.FirstOrDefault()}";
+            }
+
+            return View("Chat");
+        }
+
+        public async Task<IActionResult> DeElevate(string initialMessage)
+        {
+            if (string.IsNullOrEmpty(initialMessage))
+            {
+                ViewData["AIEngagementStatus"] = "Error: initial message is empty.";
+                return View("Chat");
+            }
+
+            var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
+
+            // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
+            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIDeElevateEndpoint));
+            httpRequestMessage.Content = new StringContent(
+                GetDeElevateToAIRequestBody(currentSelectedParams, initialMessage),
+                Encoding.UTF8,
+                "application/json");
+            httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+
+            // Add HMAC auth, set content, method, requestUri before calling this method
+            await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+            // Send the request and get the response
+            HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+
+            if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
+                               httpResponseMessage.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                ViewData["AIDisengagementStatus"] = "Disengaged successfully.";
+                await SendMessageToUserAsync("[AI agent has been removed from this conversation.]");
+            }
+            else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                ViewData["AIDisengagementStatus"] = "Already disengaged.";
+            }
+            else
+            {
+                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+                ViewData["AIDisengagementStatus"] = $"Error de-elevating AI conversation: {responseContent}";
+            }
+
+            // print all the headers in httpResponseMessage
+            foreach (var header in httpResponseMessage.Headers)
+            {
+                ViewData["AIDisengagementStatus"] = ViewData["AIDisengagementStatus"]?.ToString() + $"\n{header.Key}: {header.Value.FirstOrDefault()}";
             }
 
             return View("Chat");
@@ -161,6 +214,15 @@ namespace viewer.Controllers
             return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
         }
 
+        private async Task SendMessageToUserAsync(string message)
+        {
+            var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
+
+            ViewData["Message"] = ViewData["Message"]?.ToString() + $"\nContoso: {message}";
+            var sendTextMessageOptions = new SendMessageOptions(currentSelectedParams.ChannelRegistrationId, currentSelectedParams.RecipientList, message);
+            Response<SendMessageResult> sendTextMessageResult = await currentSelectedParams.notificationMessagesClient.SendMessageAsync(sendTextMessageOptions);
+        }
+
         private string GetDeliveryFunctionResultRequestBody(EnvironmentSpecificParams currentSelectedParams, object functionResult, string functionName)
         {
             var returnObj = new
@@ -193,20 +255,34 @@ namespace viewer.Controllers
                     DeploymentModel = "test",
                     Endpoint = new Uri("https://intelligent-routing-fhl.openai.azure.com/"),
                     ApiVersion = "2023-07-01-preview",
-                    Greeting = "Hi, This is ACS Health Care AI Agent. How can I help you?",
-                    AssistantName = "TestAgent",
+                    Greeting = "Hi, I'm Kai, your virtual assistant. How can I help you today?",
+                    AssistantName = "Kai",
                     AssistantPersonality = "empathetic",
-                    BusinessContext = "Medical Care",
+                    BusinessContext = "You are a virtual healthcare assistant for Lamna healthcare that operates in the Seattle area offering primary healthcare and urgent care." +
+                    " You collect customers' information, validate their information and help them with scheduling doctor appointments.",
                     Functions = PatientRegistrationMethods.GetFunctionDefinitions(),
                 },
                 InitialMessage = new
                 {
                     Text = initialMessage,
-                    Type = "user-text"
+                    Type = "user-text-message"
                 }
             };
 
             return Newtonsoft.Json.JsonConvert.SerializeObject(returnObj);
         }
+
+        private string GetDeElevateToAIRequestBody(EnvironmentSpecificParams currentSelectedParams, string initialMessage)
+        {
+            var returnObj = new
+            {
+                ChannelRegistrationId = currentSelectedParams.ChannelRegistrationId,
+                To = currentSelectedParams.RecipientList.FirstOrDefault(),
+                aiDisengagementReason = AIDisengagementReason.ConversationCompleted,
+            };
+
+            return Newtonsoft.Json.JsonConvert.SerializeObject(returnObj);
+        }
+
     }
 }

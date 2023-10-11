@@ -2,15 +2,15 @@
 
 namespace viewer.Models;
 
-public class AIFunctionCallRequestedEventData : EventGridPayloadObject
+public class AIMessageSentEventData : EventGridPayloadObject
 {
     /// <summary>
     /// Function Name
     /// </summary>
-    public string FunctionName { get; set; }
+    public string Content { get; set; }
 
     /// <summary>
     /// Function Parameters
     /// </summary>
-    public object FunctionParameters { get; set; }
+    public object ConversationSentimentScore { get; set; }
 }

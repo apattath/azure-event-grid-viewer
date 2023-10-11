@@ -7,36 +7,19 @@ namespace viewer.Models;
 public class EventGridPayloadObject
 {
     /// <summary>
-    /// The time that the event is being created for Event Grid.
+    /// Channel RegistrationId
     /// </summary>
-    /// <remarks>
-    /// Changed Data type of EventTime as DateTime from DateTimeOffset because
-    /// Event service uses dateTime and Conversion from DateTimeOffset is loosing datetime information
-    /// and EventTime is getting populating with default vaule.
-    /// </remarks>
-    [Required]
-    public DateTimeOffset? EventTime { get; init; }
-
-    /// <summary>
-    /// StableResourceId of Acs Resource
-    /// </summary>
-    [Required]
-    public string AcsResourceId { get; set; }
-
-    /// <summary>
-    /// Channel type, e.g. WhatsApp
-    /// </summary>
-    public string ChannelType { get; set; }
-
-    /// <summary>
-    /// </summary>
-    /// Sender Id
-    public string From { get; set; }
+    public Guid ChannelRegistrationId { get; set; }
 
     /// <summary>
     /// Recipient Id
     /// </summary>
     public string To { get; set; }
+
+    /// <summary>
+    /// Channel type, e.g. WhatsApp
+    /// </summary>
+    public string ChannelType { get; set; }
 
     /// <summary>
     /// Timestamp of the received message
