@@ -106,7 +106,7 @@ internal static class PatientRegistrationMethods
         }
         else
         {
-            errorMessage = "The patient is not registered yet.";
+            errorMessage = "The patient is not registered yet. Ask if the patient wants to get registered.";
             // Console.WriteLine($"FunctionResponse: {errorMessage}");
             return new FunctionResponse(errorMessage, null);
         }
@@ -355,7 +355,7 @@ internal static class PatientRegistrationMethods
         }
         else
         {
-            errorMessage = "Preferred doctor is not available during preferred time slots.";
+            errorMessage = "Preferred doctor is not available during preferred time slots. Alternate doctors and time slots are available if patient wants to choose.";
             // create a new jobject with alternate preferred time slots and assign it to the functionResult object in FunctionResponse
             JObject alternatePreferredTimeSlotsForDoctor1 = new JObject()
             {

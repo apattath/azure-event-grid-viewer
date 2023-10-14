@@ -22,7 +22,7 @@ namespace viewer.Controllers
 {
     public class MessageController : Controller
     {
-
+        private readonly string MessagingAIStartEndpoint = "messages/ai/start";
         private readonly string MessagingAIElevateEndpoint = "messages/ai/elevate";
         private readonly string MessagingAIDeElevateEndpoint = "messages/ai/disengage";
         private readonly string MessagingAIDeliveryFunctionResultEndpoint = "messages/ai/deliverFunctionResults";
@@ -65,7 +65,103 @@ namespace viewer.Controllers
 
         public async Task<IActionResult> Send(string message)
         {
-            await SendMessageToUserAsync(message);
+            var sendTextMessageResult = await SendMessageToUserAsync(message);
+
+            if (sendTextMessageResult.GetRawResponse().IsError)
+            {
+                ViewData["Message"] = $"\nError sending message: {sendTextMessageResult.GetRawResponse().ReasonPhrase}";
+            }
+            else
+            {
+                ViewData["Message"] = $"\nMessage sent successfully.";
+            }
+
+            return View("Chat");
+        }
+
+        public async Task<IActionResult> StartAIConversationWithText(string initialMessage)
+        {
+            var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
+
+            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint));
+            httpRequestMessage.Content = new StringContent(
+                GetElevateOrStartAIRequestBody(currentSelectedParams, messageType: "business-text-message", initialMessage: initialMessage),
+                Encoding.UTF8,
+                "application/json");
+            httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+
+            // Add HMAC auth, set content, method, requestUri before calling this method
+            await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+            // Send a notification to user about adding an AI agent.
+            await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
+
+            // Send the request and get the response
+            HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+
+            if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
+                httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+            {
+                ViewData["StartAITextMessage"] = "Enabled";
+            }
+            else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                ViewData["StartAITextMessage"] = "Already enabled";
+            }
+            else
+            {
+                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+                ViewData["StartAITextMessage"] = $"Error starting AI-enabled conversation: {responseContent}";
+            }
+
+            return View("Chat");
+        }
+
+        public async Task<IActionResult> StartAIConversationWithTemplate(string templateName)
+        {
+            var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
+
+            MessageTemplateClient messageTemplateClient = new MessageTemplateClient(currentSelectedParams.AcsConnectionString);
+            Pageable<MessageTemplateItem> templates = messageTemplateClient.GetTemplates(currentSelectedParams.ChannelRegistrationId);
+            foreach (MessageTemplateItem template in templates)
+            {
+                Console.WriteLine("Name: {0}\tLanguage: {1}\tStatus: {2}\tChannelType: {3}\nContent: {4}\n",
+                    template.Name, template.Language, template.Status, template.ChannelType, template.WhatsApp.Content);
+            }
+
+            // Send Sample Template sample_template
+            MessageTemplate sampleTemplate = AssembleSampleTemplate(templateName);
+
+            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint));
+            httpRequestMessage.Content = new StringContent(
+                GetElevateOrStartAIRequestBody(currentSelectedParams, messageType: "business-template-message", template: sampleTemplate),
+                Encoding.UTF8,
+                "application/json");
+            httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+
+            // Add HMAC auth, set content, method, requestUri before calling this method
+            await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+            // Send a notification to user about adding an AI agent.
+            await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
+
+            // Send the request and get the response
+            HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+
+            if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
+                httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+            {
+                ViewData["StartAITemplateMessage"] = "Enabled";
+            }
+            else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                ViewData["StartAITemplateMessage"] = "Already enabled";
+            }
+            else
+            {
+                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+                ViewData["StartAITemplateMessage"] = $"Error starting AI-enabled conversation: {responseContent}";
+            }
 
             return View("Chat");
         }
@@ -83,13 +179,16 @@ namespace viewer.Controllers
             // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
             HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIElevateEndpoint));
             httpRequestMessage.Content = new StringContent(
-                GetElevateToAIRequestBody(currentSelectedParams, initialMessage),
+                GetElevateOrStartAIRequestBody(currentSelectedParams, messageType: "user-text-message", initialMessage: initialMessage),
                 Encoding.UTF8,
                 "application/json");
             httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
 
             // Add HMAC auth, set content, method, requestUri before calling this method
             await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+            // Send a notification to user about adding an AI agent.
+            await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
 
             // Send the request and get the response
             HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
@@ -98,7 +197,6 @@ namespace viewer.Controllers
                 httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
             {
                 ViewData["AIEngagementStatus"] = "Enabled";
-                await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
             }
             else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
@@ -214,13 +312,14 @@ namespace viewer.Controllers
             return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
         }
 
-        private async Task SendMessageToUserAsync(string message)
+        private async Task<Response<SendMessageResult>> SendMessageToUserAsync(string message)
         {
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
-            ViewData["Message"] = ViewData["Message"]?.ToString() + $"\nContoso: {message}";
             var sendTextMessageOptions = new SendMessageOptions(currentSelectedParams.ChannelRegistrationId, currentSelectedParams.RecipientList, message);
             Response<SendMessageResult> sendTextMessageResult = await currentSelectedParams.notificationMessagesClient.SendMessageAsync(sendTextMessageOptions);
+
+            return sendTextMessageResult;
         }
 
         private string GetDeliveryFunctionResultRequestBody(EnvironmentSpecificParams currentSelectedParams, object functionResult, string functionName)
@@ -244,7 +343,11 @@ namespace viewer.Controllers
             return uriBuilder.Uri;
         }
 
-        private string GetElevateToAIRequestBody(EnvironmentSpecificParams currentSelectedParams, string initialMessage)
+        private string GetElevateOrStartAIRequestBody(
+            EnvironmentSpecificParams currentSelectedParams,
+            string messageType,
+            string initialMessage = default,
+            MessageTemplate template = default)
         {
             var returnObj = new
             {
@@ -264,12 +367,14 @@ namespace viewer.Controllers
                 },
                 InitialMessage = new
                 {
-                    Text = initialMessage,
-                    Type = "user-text-message"
+                    Text = initialMessage ?? string.Empty,
+                    Type = messageType,
+                    Template = template,
                 }
             };
 
-            return Newtonsoft.Json.JsonConvert.SerializeObject(returnObj);
+            var returnString = Newtonsoft.Json.JsonConvert.SerializeObject(returnObj);
+            return returnString;
         }
 
         private string GetDeElevateToAIRequestBody(EnvironmentSpecificParams currentSelectedParams, string initialMessage)
@@ -284,5 +389,12 @@ namespace viewer.Controllers
             return Newtonsoft.Json.JsonConvert.SerializeObject(returnObj);
         }
 
+        private static MessageTemplate AssembleSampleTemplate(string templateName)
+        {
+            string name = templateName;
+            string templateLanguage = "en_us";
+
+            return new MessageTemplate(name, templateLanguage);
+        }
     }
 }

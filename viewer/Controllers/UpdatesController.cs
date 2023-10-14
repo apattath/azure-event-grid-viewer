@@ -285,18 +285,21 @@ namespace viewer.Controllers
                 return Ok();
             }
 
-            ViewData["Message"] = ViewData["Message"]?.ToString() + $"\nCustomer: {eventData.Content}";
-
-            IList<string> escalationWords = new List<string> { "urgent", "escalate", "emergency" };
-            IList<string> deescalationWords = new List<string> { "resolved", "bye", "resolution" };
-
-            if (escalationWords.Any(word => eventData.Content.Contains(word, StringComparison.OrdinalIgnoreCase)))
+            if (eventData.Content is not null)
             {
-                return RedirectToAction("elevate", "Message", new { initialMessage = eventData.Content });
-            }
-            else if (deescalationWords.Any(word => eventData.Content.Contains(word, StringComparison.OrdinalIgnoreCase)))
-            {
-                return RedirectToAction("deelevate", "Message", new { initialMessage = eventData.Content });
+                ViewData["Message"] = ViewData["Message"]?.ToString() + $"\nCustomer: {eventData.Content}";
+
+                IList<string> escalationWords = new List<string> { "urgent", "escalate", "emergency" };
+                IList<string> deescalationWords = new List<string> { "resolved", "bye", "resolution" };
+
+                if (escalationWords.Any(word => eventData.Content.Contains(word, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return RedirectToAction("elevate", "Message", new { initialMessage = eventData.Content });
+                }
+                else if (deescalationWords.Any(word => eventData.Content.Contains(word, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return RedirectToAction("deelevate", "Message", new { initialMessage = eventData.Content });
+                }
             }
 
             return Ok();
