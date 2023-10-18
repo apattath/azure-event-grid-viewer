@@ -7,6 +7,7 @@ namespace viewer
 {
     public class EnvironmentSpecificParams
     {
+        public TargetEnvironment TargetEnvironment;
         public string ChannelRegistrationId;
         public IList<string> RecipientList;
         public string AcsConnectionString;
@@ -29,6 +30,7 @@ namespace viewer
         private TargetEnvironment currentTargetEnvironment = TargetEnvironment.INT;
         private EnvironmentSpecificParams localIntParams = new EnvironmentSpecificParams()
         {
+            TargetEnvironment = TargetEnvironment.LOCALINT,
             ChannelRegistrationId = "52b11371-748c-4757-a89c-911cd6b81aca",
             AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT"),
             CpmEndpoint = "https://localhost:8997/",
@@ -37,6 +39,7 @@ namespace viewer
 
         private EnvironmentSpecificParams localPpeParams = new EnvironmentSpecificParams()
         {
+            TargetEnvironment = TargetEnvironment.LOCALPPE,
             ChannelRegistrationId = "873a641f-637e-47bd-8cf0-6dc7bfb52a8f",
             AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE"),
             CpmEndpoint = "https://localhost:8997/",
@@ -45,6 +48,7 @@ namespace viewer
 
         private EnvironmentSpecificParams intParams = new EnvironmentSpecificParams()
         {
+            TargetEnvironment = TargetEnvironment.INT,
             ChannelRegistrationId = "52b11371-748c-4757-a89c-911cd6b81aca",
             AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT"),
             CpmEndpoint = ParseEndpointFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT")),
@@ -53,6 +57,7 @@ namespace viewer
 
         private EnvironmentSpecificParams ppeParams = new EnvironmentSpecificParams()
         {
+            TargetEnvironment = TargetEnvironment.PPE,
             ChannelRegistrationId = "873a641f-637e-47bd-8cf0-6dc7bfb52a8f",
             AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE"),
             CpmEndpoint = ParseEndpointFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE")),
@@ -81,6 +86,7 @@ namespace viewer
                 TargetEnvironment.PPE => ppeParams,
                 _ => throw new ArgumentException($"Invalid target environment: {currentTargetEnvironment}"),
             };
+            conversationId = default;
         }
 
         public EnvironmentSpecificParams GetCurrentEnvironment() => currentSelectedParams;
@@ -104,6 +110,8 @@ namespace viewer
                 TargetEnvironment.PPE => ppeParams,
                 _ => throw new ArgumentException($"Invalid target environment: {currentTargetEnvironment}"),
             };
+
+            conversationId = default;
 
             if (!string.IsNullOrWhiteSpace(currentSelectedParams.AcsConnectionString))
             {

@@ -50,13 +50,7 @@ namespace viewer.Controllers
         public IActionResult SetEnvironment(string environment, string channelRegistrationId, string phoneNumber)
         {
             environmentManagerService.SetEnvironment(environment, channelRegistrationId, phoneNumber);
-            var currentSelectedParams = environmentManagerService.GetCurrentEnvironment();
-
-            ViewData["Environment"] = environment;
-            ViewData["ChannelRegistrationId"] = currentSelectedParams.ChannelRegistrationId;
-            ViewData["PhoneNumber"] = currentSelectedParams.RecipientList[0];
-
-            return View("Chat");
+            return ReturnChatView();
         }
 
         public IActionResult Chat()
@@ -77,7 +71,7 @@ namespace viewer.Controllers
                 ViewData["Message"] = $"\nMessage sent successfully.";
             }
 
-            return View("Chat");
+            return ReturnChatView();
         }
 
         public async Task<IActionResult> StartAIConversationWithText(string initialMessage)
@@ -101,11 +95,13 @@ namespace viewer.Controllers
 
             // Send the request and get the response
             HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+            var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
 
             if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
                 httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
             {
                 ViewData["StartAITextMessage"] = "Enabled";
+                environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
             }
             else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
@@ -113,11 +109,10 @@ namespace viewer.Controllers
             }
             else
             {
-                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
                 ViewData["StartAITextMessage"] = $"Error starting AI-enabled conversation: {responseContent}";
             }
 
-            return View("Chat");
+            return ReturnChatView();
         }
 
         public async Task<IActionResult> StartAIConversationWithTemplate(string templateName)
@@ -159,11 +154,13 @@ namespace viewer.Controllers
 
             // Send the request and get the response
             HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+            var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
 
             if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
                 httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
             {
                 ViewData["StartAITemplateMessage"] = "Enabled";
+                environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
             }
             else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
@@ -171,11 +168,10 @@ namespace viewer.Controllers
             }
             else
             {
-                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
                 ViewData["StartAITemplateMessage"] = $"Error starting AI-enabled conversation: {responseContent}";
             }
 
-            return View("Chat");
+            return ReturnChatView();
         }
 
         public async Task<IActionResult> Elevate(string initialMessage)
@@ -227,7 +223,7 @@ namespace viewer.Controllers
                 ViewData["AIEngagementStatus"] = ViewData["AIEngagementStatus"]?.ToString() + $"\n{header.Key}: {header.Value.FirstOrDefault()}";
             }
 
-            return View("Chat");
+            return ReturnChatView();
         }
 
         public async Task<IActionResult> DeElevate(string initialMessage)
@@ -283,7 +279,7 @@ namespace viewer.Controllers
                 ViewData["AIDisengagementStatus"] = ViewData["AIDisengagementStatus"]?.ToString() + $"\n{header.Key}: {header.Value.FirstOrDefault()}";
             }
 
-            return View("Chat");
+            return ReturnChatView();
         }
 
         public async Task<IActionResult> DeliverFunctionResult(string functionResult, string functionName)
@@ -332,7 +328,7 @@ namespace viewer.Controllers
                 ViewData["DeliverFunctionResultStatus"] = $"Error delivering function result: {responseContent}";
             }
 
-            return View("Chat");
+            return ReturnChatView();
         }
 
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
@@ -371,58 +367,20 @@ namespace viewer.Controllers
             return uriBuilder.Uri;
         }
 
+        private IActionResult ReturnChatView()
+        {
+            var currentSelectedParams = environmentManagerService.GetCurrentEnvironment();
+
+            ViewData["Environment"] = currentSelectedParams.TargetEnvironment;
+            ViewData["ChannelRegistrationId"] = currentSelectedParams.ChannelRegistrationId;
+            ViewData["PhoneNumber"] = currentSelectedParams.RecipientList[0];
+            ViewData["ConversationId"] = environmentManagerService.ConversationId;
+
+            return View("Chat");
+        }
+
         private object GetCheckupConfirmationTemplateJson(string templateName, string patientName, string yesPayload, string noPayload)
         {
-            //string templateJson = $@"
-            //{{
-            //    ""template"": {{
-            //        ""name"": ""{templateName}"",
-            //        ""language"": ""en_us"",
-            //        ""values"": {{ 
-            //            ""name"": {{
-            //                ""kind"":""text"",
-            //                ""text"":{{ 
-            //                    ""text"": ""{patientName}""
-            //                }}
-            //            }},
-            //            ""Yes"": {{
-            //                ""kind"": ""quick_action"",
-            //                ""quickAction"": {{
-            //                    ""text"": null,
-            //                    ""payload"": ""{yesPayload}""
-            //                }}
-            //            }},
-            //            ""No"": {{
-            //                ""kind"": ""quick_action"",
-            //                ""quickAction"": {{
-            //                    ""text"": null,
-            //                    ""payload"": ""{noPayload}""
-            //                }}
-            //            }}
-            //        }},
-            //        ""bindings"": {{
-            //            ""whatsapp"": {{
-            //                ""header"": null,
-            //                ""body"": [{{
-            //                    ""refValue"": ""name""
-            //                }}],
-            //                ""footer"": null,
-            //                ""button"": [
-            //                {{
-            //                    ""refValue"": ""Yes"",
-            //                    ""subType"": ""quickReply""
-            //                }},
-            //                {{
-            //                    ""refValue"": ""No"",
-            //                    ""subType"": ""quickReply""
-            //                }}]
-            //            }}
-            //        }}
-            //    }}
-            //}}";
-
-            //return templateJson;
-
             var templateObject = new
             {
                 name = templateName,
