@@ -31,26 +31,6 @@ public class AIAgentConfigurationDto
     public string? Greeting { get; set; }
 
     /// <summary>
-    /// The name of the AI assistant
-    /// </summary>
-    [JsonProperty("assistantName")]
-    public string? AssistantName { get; set; }
-
-    /// <summary>
-    /// Provides context for the AI assistant about its own personality (for example, friendly, formal, or humorous). It helps the AI assistant to
-    /// tailor its responses accordingly.
-    /// </summary>
-    [JsonProperty("assistantPersonality")]
-    public string? AssistantPersonality { get; set; }
-
-    /// <summary>
-    /// Provides context for the AI assistant about the business. It helps the AI assistant to understand the business context and
-    /// tailor its responses accordingly.
-    /// </summary>
-    [JsonProperty("businessContext")]
-    public string? BusinessContext { get; set; }
-
-    /// <summary>
     /// An optional list of functions that can be invoked by the AI assistant to complete a task.
     /// </summary>
     public IEnumerable<AIFunctionDto>? Functions { get; set; }

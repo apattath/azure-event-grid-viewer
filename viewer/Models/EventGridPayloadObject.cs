@@ -17,6 +17,11 @@ public class EventGridPayloadObject
     public string To { get; set; }
 
     /// <summary>
+    /// Conversation Id
+    /// </summary>
+    public string ConversationId { get; set; }
+
+    /// <summary>
     /// Channel type, e.g. WhatsApp
     /// </summary>
     public string ChannelType { get; set; }

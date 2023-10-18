@@ -61,6 +61,16 @@ namespace viewer
 
         private EnvironmentSpecificParams currentSelectedParams = default;
 
+        private string conversationId = default;
+        public string ConversationId
+        {
+            get => conversationId;
+            set
+            {
+                conversationId = value;
+            }
+        }   
+
         public EnvironmentManagerService()
         {
             currentSelectedParams = currentTargetEnvironment switch

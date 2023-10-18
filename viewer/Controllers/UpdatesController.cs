@@ -140,23 +140,17 @@ namespace viewer.Controllers
                 {
                     case "microsoft.communication.advancedmessagereceived":
                         return HandleAdvancedMessageReceivedEvent(details);
-                        break;
                     case "microsoft.communication.advancedmessagedeliverystatusupdated":
                         return HandleAdvancedMessageDeliveryStatusUpdatedEvent(details);
-                        break;
                     case "microsoft.communication.aigeneratedmessagesent":
                         return HandleAIMessageSentEvent(details);
-                        break;
                     case "microsoft.communication.aifunctioncallrequested":
                         return HandleAIFunctionCallRequestedEvent(details);
-                        break;
                     case "microsoft.communication.aidisengaged":
                         return HandleAIDisengagedEvent(details);
-                        break;
                     case "microsoft.communication.experimental":
                     case "microsoft.communication.experimentalevent":
                         return HandleExperimentalAIEvents(details);
-                        break;
                     default:
                         throw new Exception($"Unknown event type: {details.EventType}");
                 }
@@ -212,6 +206,8 @@ namespace viewer.Controllers
                 return Ok();
             }
 
+            environmentManagerService.ConversationId = eventData.ConversationId;
+
             // Extract the function name and parameters from the eventData.
             var funcName = eventData.FunctionName;
             var parameters = eventData.FunctionParameters.ToString();
@@ -262,6 +258,8 @@ namespace viewer.Controllers
             {
                 return Ok();
             }
+
+            environmentManagerService.ConversationId = eventData.ConversationId;
 
             // print Content
             var content = eventData.Content;

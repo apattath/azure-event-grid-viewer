@@ -3,6 +3,7 @@ using Azure.Communication.Messages;
 using Azure.Core.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Diagnostics;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -22,10 +23,10 @@ namespace viewer.Controllers
 {
     public class MessageController : Controller
     {
-        private readonly string MessagingAIStartEndpoint = "messages/ai/start";
-        private readonly string MessagingAIElevateEndpoint = "messages/ai/elevate";
-        private readonly string MessagingAIDeElevateEndpoint = "messages/ai/disengage";
-        private readonly string MessagingAIDeliveryFunctionResultEndpoint = "messages/ai/deliverFunctionResults";
+        private readonly string MessagingAIStartEndpoint = "messages/conversations/:engageAI";
+        private readonly string MessagingAIElevateEndpoint = "messages/conversations/:engageAI";
+        private readonly string MessagingAIDeElevateEndpoint = "messages/conversations/{0}:disengageAI";
+        private readonly string MessagingAIDeliveryFunctionResultEndpoint = "messages/conversations/{0}:deliverFunctionResults";
         private readonly string MessagingAIApiVersion = "api-version=2023-11-01-preview";
 
         private readonly HttpClient httpClient;
@@ -83,9 +84,11 @@ namespace viewer.Controllers
         {
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint));
+            var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint);
+
+            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
             httpRequestMessage.Content = new StringContent(
-                GetElevateOrStartAIRequestBody(currentSelectedParams, messageType: "business-text-message", initialMessage: initialMessage),
+                GetElevateOrStartAIRequestBody(currentSelectedParams, businessInitiatedMessageType: BusinessIntiatedMessageType.BusinessTextMessage, initialMessage: initialMessage),
                 Encoding.UTF8,
                 "application/json");
             httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
@@ -132,9 +135,18 @@ namespace viewer.Controllers
             // Send Sample Template sample_template
             MessageTemplate sampleTemplate = AssembleSampleTemplate(templateName);
 
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint));
+            var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint);
+
+            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
             httpRequestMessage.Content = new StringContent(
-                GetElevateOrStartAIRequestBody(currentSelectedParams, messageType: "business-template-message", template: sampleTemplate),
+                GetElevateOrStartAIRequestBody(
+                    currentSelectedParams,
+                    businessInitiatedMessageType: BusinessIntiatedMessageType.BusinessTemplateMessage,
+                    template: GetCheckupConfirmationTemplateJson(
+                        templateName,
+                        "Daniela",
+                        "Daniela wants to schedule a doctor appointment.",
+                        "Daniela doesn't want to schedule a doctor appointment at this time.")),
                 Encoding.UTF8,
                 "application/json");
             httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
@@ -179,7 +191,7 @@ namespace viewer.Controllers
             // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
             HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIElevateEndpoint));
             httpRequestMessage.Content = new StringContent(
-                GetElevateOrStartAIRequestBody(currentSelectedParams, messageType: "user-text-message", initialMessage: initialMessage),
+                GetElevateOrStartAIRequestBody(currentSelectedParams, userInitiatedMessageType: UserInitiatedMessageType.UserInitiatedTextMessage, initialMessage: initialMessage),
                 Encoding.UTF8,
                 "application/json");
             httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
@@ -192,11 +204,13 @@ namespace viewer.Controllers
 
             // Send the request and get the response
             HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+            var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
 
             if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
                 httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
             {
                 ViewData["AIEngagementStatus"] = "Enabled";
+                environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
             }
             else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
@@ -204,7 +218,6 @@ namespace viewer.Controllers
             }
             else
             {
-                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
                 ViewData["AIEngagementStatus"] = $"Error elevating to AI conversation: {responseContent}";
             }
 
@@ -221,14 +234,21 @@ namespace viewer.Controllers
         {
             if (string.IsNullOrEmpty(initialMessage))
             {
-                ViewData["AIEngagementStatus"] = "Error: initial message is empty.";
-                return View("Chat");
+                initialMessage = "Thank you for your help.";
             }
 
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
-            // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIDeElevateEndpoint));
+            if (string.IsNullOrEmpty(environmentManagerService.ConversationId))
+            {
+                ViewData["AIDisengagementStatus"] = "Error: conversationId is empty. Please call \"EngageAI\" method first.";
+                return View("Chat");
+            }
+
+            var endpointPath = string.Format(MessagingAIDeElevateEndpoint, environmentManagerService.ConversationId);
+            var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, endpointPath);
+
+            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
             httpRequestMessage.Content = new StringContent(
                 GetDeElevateToAIRequestBody(currentSelectedParams, initialMessage),
                 Encoding.UTF8,
@@ -277,8 +297,17 @@ namespace viewer.Controllers
             //    _ => "Unknown"
             //};
 
+            if (string.IsNullOrEmpty(environmentManagerService.ConversationId))
+            {
+                ViewData["DeliverFunctionResultStatus"] = "Error: conversationId is empty. Please call \"EngageAI\" method first.";
+                return View("Chat");
+            }
+
+            var endpointPath = string.Format(MessagingAIDeliveryFunctionResultEndpoint, environmentManagerService.ConversationId);
+            var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, endpointPath);
+
             // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIDeliveryFunctionResultEndpoint));
+            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
             httpRequestMessage.Content = new StringContent(
                 GetDeliveryFunctionResultRequestBody(currentSelectedParams, functionResult, functionName),
                 Encoding.UTF8,
@@ -326,13 +355,12 @@ namespace viewer.Controllers
         {
             var returnObj = new
             {
-                ChannelRegistrationId = currentSelectedParams.ChannelRegistrationId,
                 To = currentSelectedParams.RecipientList.FirstOrDefault(),
                 FunctionName = functionName,
                 FunctionResult = functionResult,
             };
 
-            return Newtonsoft.Json.JsonConvert.SerializeObject(returnObj);
+            return JsonConvert.SerializeObject(returnObj);
         }
 
         private Uri GetFullApiUri(string baseEndpoint, string relativePath)
@@ -343,12 +371,145 @@ namespace viewer.Controllers
             return uriBuilder.Uri;
         }
 
+        private object GetCheckupConfirmationTemplateJson(string templateName, string patientName, string yesPayload, string noPayload)
+        {
+            //string templateJson = $@"
+            //{{
+            //    ""template"": {{
+            //        ""name"": ""{templateName}"",
+            //        ""language"": ""en_us"",
+            //        ""values"": {{ 
+            //            ""name"": {{
+            //                ""kind"":""text"",
+            //                ""text"":{{ 
+            //                    ""text"": ""{patientName}""
+            //                }}
+            //            }},
+            //            ""Yes"": {{
+            //                ""kind"": ""quick_action"",
+            //                ""quickAction"": {{
+            //                    ""text"": null,
+            //                    ""payload"": ""{yesPayload}""
+            //                }}
+            //            }},
+            //            ""No"": {{
+            //                ""kind"": ""quick_action"",
+            //                ""quickAction"": {{
+            //                    ""text"": null,
+            //                    ""payload"": ""{noPayload}""
+            //                }}
+            //            }}
+            //        }},
+            //        ""bindings"": {{
+            //            ""whatsapp"": {{
+            //                ""header"": null,
+            //                ""body"": [{{
+            //                    ""refValue"": ""name""
+            //                }}],
+            //                ""footer"": null,
+            //                ""button"": [
+            //                {{
+            //                    ""refValue"": ""Yes"",
+            //                    ""subType"": ""quickReply""
+            //                }},
+            //                {{
+            //                    ""refValue"": ""No"",
+            //                    ""subType"": ""quickReply""
+            //                }}]
+            //            }}
+            //        }}
+            //    }}
+            //}}";
+
+            //return templateJson;
+
+            var templateObject = new
+            {
+                name = templateName,
+                language = "en_us",
+                values = new
+                {
+                    name = new
+                    {
+                        kind = "text",
+                        text = new
+                        {
+                            text = patientName,
+                        },
+                    },
+                    Yes = new
+                    {
+                        kind = "quick_action",
+                        quickAction = new
+                        {
+                            text = (string)null,
+                            payload = yesPayload,
+                        },
+                    },
+                    No = new
+                    {
+                        kind = "quick_action",
+                        quickAction = new
+                        {
+                            text = (string)null,
+                            payload = noPayload,
+                        },
+                    },
+                },
+                bindings = new
+                {
+                    whatsapp = new
+                    {
+                        header = (string)null,
+                        body = new[]
+                        {
+                            new
+                            {
+                                refValue = "name",
+                            },
+                        },
+                        footer = (string)null,
+                        button = new[]
+                        {
+                            new
+                            {
+                                refValue = "Yes",
+                                subType = "quickReply",
+                            },
+                            new
+                            {
+                                refValue = "No",
+                                subType = "quickReply",
+                            },
+                        },
+                    },
+                },
+            };
+
+            return templateObject;
+        }
+
         private string GetElevateOrStartAIRequestBody(
             EnvironmentSpecificParams currentSelectedParams,
-            string messageType,
+            UserInitiatedMessageType? userInitiatedMessageType = default,
+            BusinessIntiatedMessageType? businessInitiatedMessageType = default,
             string initialMessage = default,
-            MessageTemplate template = default)
+            object template = default)
         {
+            var businessInitiatedMessage = (businessInitiatedMessageType is null) ? default : new
+            {
+                Content = initialMessage,
+                Type = businessInitiatedMessageType,
+                Template = template,
+            };
+
+            var userInitiatedMessage = (userInitiatedMessageType is null) ? default : new
+            {
+                Content = initialMessage,
+                Type = userInitiatedMessageType,
+                Template = template,
+            };
+
             var returnObj = new
             {
                 ChannelRegistrationId = currentSelectedParams.ChannelRegistrationId,
@@ -359,21 +520,13 @@ namespace viewer.Controllers
                     Endpoint = new Uri("https://intelligent-routing-fhl.openai.azure.com/"),
                     ApiVersion = "2023-07-01-preview",
                     Greeting = "Hi, I'm Kai, your virtual assistant. How can I help you today?",
-                    AssistantName = "Kai",
-                    AssistantPersonality = "empathetic",
-                    BusinessContext = "You are a virtual healthcare assistant for Lamna healthcare that operates in the Seattle area offering primary healthcare and urgent care." +
-                    " You collect customers' information, validate their information and help them with scheduling doctor appointments.",
                     Functions = PatientRegistrationMethods.GetFunctionDefinitions(),
                 },
-                InitialMessage = new
-                {
-                    Text = initialMessage ?? string.Empty,
-                    Type = messageType,
-                    Template = template,
-                }
+                BusinessInitiatedMessage = businessInitiatedMessage,
+                UserInitiatedMessage = userInitiatedMessage,
             };
 
-            var returnString = Newtonsoft.Json.JsonConvert.SerializeObject(returnObj);
+            var returnString = JsonConvert.SerializeObject(returnObj);
             return returnString;
         }
 
@@ -381,20 +534,38 @@ namespace viewer.Controllers
         {
             var returnObj = new
             {
-                ChannelRegistrationId = currentSelectedParams.ChannelRegistrationId,
-                To = currentSelectedParams.RecipientList.FirstOrDefault(),
                 aiDisengagementReason = AIDisengagementReason.ConversationCompleted,
             };
 
-            return Newtonsoft.Json.JsonConvert.SerializeObject(returnObj);
+            return JsonConvert.SerializeObject(returnObj);
         }
 
         private static MessageTemplate AssembleSampleTemplate(string templateName)
         {
-            string name = templateName;
             string templateLanguage = "en_us";
 
-            return new MessageTemplate(name, templateLanguage);
+            var name = new MessageTemplateText(name: "name", text: "Daniela");
+            var yes = new MessageTemplateQuickAction(name: "Yes", payload: "Daniela said yes");
+            var no = new MessageTemplateQuickAction(name: "No", payload: "Daniela said no");
+
+            IEnumerable<MessageTemplateValue> values = new List<MessageTemplateValue>
+            {
+                name,
+                yes,
+                no
+            };
+            var bindings = new MessageTemplateWhatsAppBindings(
+                body: new[] { name.Name },
+                button: new[] {
+                    new KeyValuePair<string, MessageTemplateValueWhatsAppSubType>(yes.Name,
+                        MessageTemplateValueWhatsAppSubType.QuickReply),
+                    new KeyValuePair<string, MessageTemplateValueWhatsAppSubType>(no.Name,
+                        MessageTemplateValueWhatsAppSubType.QuickReply)
+                });
+
+            var issueResolutionTemplate = new MessageTemplate(templateName, templateLanguage, values, bindings);
+
+            return issueResolutionTemplate;
         }
     }
 }
