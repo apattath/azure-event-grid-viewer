@@ -1,6 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using Azure.Communication.Messages;
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
+
+using SDKNamespace = Azure.Communication.Messages;
 
 namespace viewer.Models;
 
@@ -32,7 +37,7 @@ public class AIFunctionParameterDto
     /// </summary>
     [JsonPropertyName("type")]
     [Required]
-    public AIFunctionParameterType Type { get; set; } = AIFunctionParameterType.String;
+    public SDKNamespace.AIFuncionParameterType Type { get; set; } = SDKNamespace.AIFuncionParameterType.String;
 
     /// <summary>
     /// Only applicable if type is Enum.
@@ -53,4 +58,16 @@ public class AIFunctionParameterDto
     /// </summary>
     [JsonPropertyName("arrayItemParameter")]
     public AIFunctionParameterDto? ArrayItemParameter { get; set; }
+
+    internal AIFunctionParameterDefinition ToAIFunctionParameterDefinition()
+    {
+        var definition = new AIFunctionParameterDefinition(
+            Name,
+            Description,
+            IsRequired,
+            Type);
+        EnumValues?.ToList().ForEach(x => definition.EnumValues.Add(x));
+
+        return definition;
+    }
 }

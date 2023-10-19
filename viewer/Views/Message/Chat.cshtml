@@ -56,12 +56,25 @@
             <br />
 
             <label for="PhoneNumber">Recipient phone number with country code (for ex:13345678890): </label>
+            <br />
+
+            <label for="shouldUseAISdk">Use SDK?: </label>
+            <select id="shouldUseAISdk" name="shouldUseAISdk">
+                <option value="true" selected="selected">true</option>
+                <option value="false">false</option>
+            </select>
+            <br />
+
             <input type="text" id="PhoneNumber" name="PhoneNumber" />
             <br />
 
             <input type="submit" value="SetEnvironment" />
             <br />
+            <br />
+            <br />
 
+            <label>Current selected environment:</label>
+            <br />
             <label>Environment: @ViewData["Environment"]</label>
             <br />
             <label>ChannelRegistrationId: @ViewData["ChannelRegistrationId"]</label>

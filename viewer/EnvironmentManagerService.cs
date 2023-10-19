@@ -13,7 +13,8 @@ namespace viewer
         public string AcsConnectionString;
         public string CpmEndpoint;
         public string AccessKey;
-        public NotificationMessagesClient notificationMessagesClient;
+        public NotificationMessagesClient NotificationMessagesClient;
+        public NotificationMessagesOpenAIClient NotificationMessagesOpenAIClient;
     }
 
     public enum TargetEnvironment
@@ -34,6 +35,7 @@ namespace viewer
             ChannelRegistrationId = "52b11371-748c-4757-a89c-911cd6b81aca",
             AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT"),
             CpmEndpoint = "https://localhost:8997/",
+            RecipientList = new List<string>() { "10000000000"},
             AccessKey = ParseAccessKeyFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT")),
         };
 
@@ -43,6 +45,7 @@ namespace viewer
             ChannelRegistrationId = "873a641f-637e-47bd-8cf0-6dc7bfb52a8f",
             AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE"),
             CpmEndpoint = "https://localhost:8997/",
+            RecipientList = new List<string>() { "10000000000" },
             AccessKey = ParseAccessKeyFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE")),
         };
 
@@ -52,6 +55,7 @@ namespace viewer
             ChannelRegistrationId = "52b11371-748c-4757-a89c-911cd6b81aca",
             AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT"),
             CpmEndpoint = ParseEndpointFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT")),
+            RecipientList = new List<string>() { "10000000000" },
             AccessKey = ParseAccessKeyFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_INT")),
         };
 
@@ -61,20 +65,19 @@ namespace viewer
             ChannelRegistrationId = "873a641f-637e-47bd-8cf0-6dc7bfb52a8f",
             AcsConnectionString = Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE"),
             CpmEndpoint = ParseEndpointFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE")),
+            RecipientList = new List<string>() { "10000000000" },
             AccessKey = ParseAccessKeyFromConnectionString(Environment.GetEnvironmentVariable("COMMUNICATION_SERVICES_CONNECTION_STRING_PPE")),
         };
 
         private EnvironmentSpecificParams currentSelectedParams = default;
 
         private string conversationId = default;
-        public string ConversationId
-        {
-            get => conversationId;
-            set
-            {
-                conversationId = value;
-            }
-        }   
+        public string ConversationId { get => conversationId; set => conversationId = value; }
+
+        private bool useAISdk = true;
+        public bool UseAISdk { get => useAISdk; set => useAISdk = value; }
+
+        public EnvironmentSpecificParams GetCurrentEnvironment() => currentSelectedParams;
 
         public EnvironmentManagerService()
         {
@@ -86,12 +89,11 @@ namespace viewer
                 TargetEnvironment.PPE => ppeParams,
                 _ => throw new ArgumentException($"Invalid target environment: {currentTargetEnvironment}"),
             };
-            conversationId = default;
+
+            InitializeEnvironment(currentSelectedParams.ChannelRegistrationId, currentSelectedParams.RecipientList[0], UseAISdk);
         }
 
-        public EnvironmentSpecificParams GetCurrentEnvironment() => currentSelectedParams;
-
-        public void SetEnvironment(string environment, string channelRegistrationId, string phoneNumber)
+        public void SetEnvironment(string environment, string channelRegistrationId, string phoneNumber, bool shouldUseAISdk = true)
         {
             currentTargetEnvironment = environment.ToLower() switch
             {
@@ -102,6 +104,11 @@ namespace viewer
                 _ => throw new ArgumentException($"Invalid target environment: {environment}"),
             };
 
+            InitializeEnvironment(channelRegistrationId, phoneNumber, shouldUseAISdk);
+        }
+
+        private void InitializeEnvironment(string channelRegistrationId, string phoneNumber, bool shouldUseAISdk)
+        {
             currentSelectedParams = currentTargetEnvironment switch
             {
                 TargetEnvironment.LOCALINT => localIntParams,
@@ -112,10 +119,19 @@ namespace viewer
             };
 
             conversationId = default;
+            useAISdk = shouldUseAISdk;
 
             if (!string.IsNullOrWhiteSpace(currentSelectedParams.AcsConnectionString))
             {
-                currentSelectedParams.notificationMessagesClient = new NotificationMessagesClient(currentSelectedParams.AcsConnectionString);
+                currentSelectedParams.NotificationMessagesClient = new NotificationMessagesClient(currentSelectedParams.AcsConnectionString);
+            }
+
+            if (shouldUseAISdk)
+            {
+                if (!string.IsNullOrWhiteSpace(currentSelectedParams.AcsConnectionString))
+                {
+                    currentSelectedParams.NotificationMessagesOpenAIClient = new NotificationMessagesOpenAIClient(currentSelectedParams.AcsConnectionString);
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(channelRegistrationId))

@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 
 namespace viewer.Shared;
+using SDKNamespace = Azure.Communication.Messages;
 
 internal class JsonExtractionUtils
 {
@@ -112,26 +113,26 @@ internal class JsonExtractionUtils
         {
             if (type.Name.Equals("Int32"))
             {
-                aIFunctionParameterDto.Type = AIFunctionParameterType.Number;
+                aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.Number;
                 return aIFunctionParameterDto;
             }
             else
             {
 
-                aIFunctionParameterDto.Type = Enum.Parse<AIFunctionParameterType>(type.Name);
+                aIFunctionParameterDto.Type = Enum.Parse<SDKNamespace.AIFuncionParameterType>(type.Name);
                 return aIFunctionParameterDto;
             }
         }
 
         if (typeof(string).IsAssignableFrom(type))
         {
-            aIFunctionParameterDto.Type = AIFunctionParameterType.String;
+            aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.String;
             return aIFunctionParameterDto;
         }
 
         if (type.IsEnum)
         {
-            aIFunctionParameterDto.Type = AIFunctionParameterType.String;
+            aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.String;
 
             var enumValues = new List<string>();
             foreach (var enumvalue in type.GetEnumValues())
@@ -168,15 +169,15 @@ internal class JsonExtractionUtils
         //    return aIFunctionParameterDto;
         //}
 
-        aIFunctionParameterDto.Type = AIFunctionParameterType.Object;
-        var objectParameterProperties = new List<AIFunctionParameterDto>();
+        //aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.Object;
+        //var objectParameterProperties = new List<AIFunctionParameterDto>();
 
-        foreach (var property in type.GetProperties())
-        {
-            objectParameterProperties.Add(GetAIFunctionParameterDto(property));
-        }
+        //foreach (var property in type.GetProperties())
+        //{
+        //    objectParameterProperties.Add(GetAIFunctionParameterDto(property));
+        //}
 
-        aIFunctionParameterDto.ObjectParameterProperties = objectParameterProperties;
+        //aIFunctionParameterDto.ObjectParameterProperties = objectParameterProperties;
 
         return aIFunctionParameterDto;
     }
