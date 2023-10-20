@@ -9,7 +9,7 @@ namespace viewer.Models
     /// The type of business message. Supports text, image, template.
     /// </summary>
     [JsonConverter(typeof(StringEnumConverter), typeof(CamelCaseNamingStrategy), new object[0], false)]
-    public enum BusinessIntiatedMessageType
+    public enum BusinessInitiatedMessageType
     {
         [EnumMember(Value = "business-template-message")]
         BusinessTemplateMessage = 1,

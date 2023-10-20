@@ -123,7 +123,8 @@ namespace viewer
 
             if (!string.IsNullOrWhiteSpace(currentSelectedParams.AcsConnectionString))
             {
-                currentSelectedParams.NotificationMessagesClient = new NotificationMessagesClient(currentSelectedParams.AcsConnectionString);
+                var options = new CommunicationMessagesClientOptions(CommunicationMessagesClientOptions.ServiceVersion.V2023_08_24_Preview);
+                currentSelectedParams.NotificationMessagesClient = new NotificationMessagesClient(currentSelectedParams.AcsConnectionString, options);
             }
 
             if (shouldUseAISdk)

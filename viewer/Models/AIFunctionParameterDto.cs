@@ -37,7 +37,7 @@ public class AIFunctionParameterDto
     /// </summary>
     [JsonPropertyName("type")]
     [Required]
-    public SDKNamespace.AIFuncionParameterType Type { get; set; } = SDKNamespace.AIFuncionParameterType.String;
+    public string Type { get; set; } = SDKNamespace.AIFunctionParameterType.String.ToString();
 
     /// <summary>
     /// Only applicable if type is Enum.

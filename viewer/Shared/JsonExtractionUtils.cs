@@ -113,26 +113,26 @@ internal class JsonExtractionUtils
         {
             if (type.Name.Equals("Int32"))
             {
-                aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.Number;
+                aIFunctionParameterDto.Type = SDKNamespace.AIFunctionParameterType.Number.ToString();
                 return aIFunctionParameterDto;
             }
             else
             {
 
-                aIFunctionParameterDto.Type = Enum.Parse<SDKNamespace.AIFuncionParameterType>(type.Name);
+                aIFunctionParameterDto.Type = Enum.Parse<SDKNamespace.AIFunctionParameterType>(type.Name).ToString();
                 return aIFunctionParameterDto;
             }
         }
 
         if (typeof(string).IsAssignableFrom(type))
         {
-            aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.String;
+            aIFunctionParameterDto.Type = SDKNamespace.AIFunctionParameterType.String.ToString();
             return aIFunctionParameterDto;
         }
 
         if (type.IsEnum)
         {
-            aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.String;
+            aIFunctionParameterDto.Type = SDKNamespace.AIFunctionParameterType.String.ToString();
 
             var enumValues = new List<string>();
             foreach (var enumvalue in type.GetEnumValues())
@@ -169,7 +169,7 @@ internal class JsonExtractionUtils
         //    return aIFunctionParameterDto;
         //}
 
-        //aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.Object;
+        //aIFunctionParameterDto.Type = SDKNamespace.AIFuncionParameterType.Object.ToString();
         //var objectParameterProperties = new List<AIFunctionParameterDto>();
 
         //foreach (var property in type.GetProperties())

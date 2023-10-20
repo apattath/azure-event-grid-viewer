@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Communication.Messages" Version="1.0.0-alpha.20231018.1" />
+    <PackageReference Include="Azure.Communication.Messages" Version="1.0.0-alpha.20231019.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
   </ItemGroup>
 
