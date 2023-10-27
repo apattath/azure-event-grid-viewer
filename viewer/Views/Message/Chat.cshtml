@@ -13,45 +13,45 @@
         <div>
             <label for="Environment">CPM Target Environment: </label>
             <select id="Environment" name="Environment">
-@* 
+
                 <option value="INT" selected="selected">INT</option>
- *@
+
 
 @* 
                 <option value="PPE">PPE</option>
                 <option value="PROD">PROD</option>
  *@
 
-
+@* 
                 <option value="INT" selected="selected">INT</option>
                 <option value="LOCALINT">LOCAL with INT (Won't work in deployed web app.')</option>
                 <option value="LOCALPPE">LOCAL with PPE (Won't work in deployed web app.')</option>
                 <option value="PPE">PPE</option>
                 <option value="PROD">PROD</option>
-
+ *@
             </select>
             <br />
 
             <label for="ChannelRegistrationId">Whatsapp Business Channel: </label>
             <select id="ChannelRegistrationId" name="ChannelRegistrationId">
-@* 
+
                 <option value="52b11371-748c-4757-a89c-911cd6b81aca">Business Ph: +1-877-219-0760 ("52b11371-748c-4757-a89c-911cd6b81aca")(INT)</option>
                 <option value="08c04423-72c7-4660-bfc6-610b190fc44b">Business Ph: +1-866-237-2935 ("08c04423-72c7-4660-bfc6-610b190fc44b")(INT)</option>
- *@
+
 @* 
                 <option value="873a641f-637e-47bd-8cf0-6dc7bfb52a8f">Business Ph: +1-855-245-2050 ("873a641f-637e-47bd-8cf0-6dc7bfb52a8f")(PPE)</option>
                 <option value="b82d9eb3-a12b-4010-aecc-30db74de9603">Business Ph: +1-844-746-5197 ("b82d9eb3-a12b-4010-aecc-30db74de9603")(PPE)</option>
                 <option value="65bd3259-1317-4567-a8af-4af4ef811d60">Business Ph: +1-833-578-1840 ("65bd3259-1317-4567-a8af-4af4ef811d60")(PPE)</option>
  *@
 
-
+@* 
                 <option value="52b11371-748c-4757-a89c-911cd6b81aca">Business Ph: +1-877-219-0760 ("52b11371-748c-4757-a89c-911cd6b81aca")(INT)</option>
                 <option value="08c04423-72c7-4660-bfc6-610b190fc44b">Business Ph: +1-866-237-2935 ("08c04423-72c7-4660-bfc6-610b190fc44b")(INT)</option>
                 <option value="873a641f-637e-47bd-8cf0-6dc7bfb52a8f">Business Ph: +1-855-245-2050 ("873a641f-637e-47bd-8cf0-6dc7bfb52a8f")(PPE)</option>
                 <option value="b82d9eb3-a12b-4010-aecc-30db74de9603">Business Ph: +1-844-746-5197 ("b82d9eb3-a12b-4010-aecc-30db74de9603")(PPE)</option>
                 <option value="65bd3259-1317-4567-a8af-4af4ef811d60">Business Ph: +1-833-578-1840 ("65bd3259-1317-4567-a8af-4af4ef811d60")(PPE)</option>
                 <option value="TBD">TBD (PROD)</option>
-
+ *@
             </select>
             <br />
 
@@ -61,6 +61,13 @@
 
             <label for="shouldUseAISdk">Use SDK?: </label>
             <select id="shouldUseAISdk" name="shouldUseAISdk">
+                <option value="true" selected="selected">true</option>
+                <option value="false">false</option>
+            </select>
+            <br />
+
+            <label for="detectFunctionsOneByOne">Detect Tasks/Intents OneByOne?: </label>
+            <select id="detectFunctionsOneByOne" name="detectFunctionsOneByOne">
                 <option value="true" selected="selected">true</option>
                 <option value="false">false</option>
             </select>
@@ -82,6 +89,8 @@
             <label>Use AI SDK: @ViewData["UseAISdk"]</label>
             <br />
             <label>ConversationID: @ViewData["ConversationId"]</label>
+            <br />
+            <label>Detect Tasks/Intents OneByOne: @ViewData["DetectFunctionsOneByOne"]</label>
             <br />
             <br />
         </div>

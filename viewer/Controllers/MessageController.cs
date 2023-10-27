@@ -25,8 +25,8 @@ namespace viewer.Controllers
 {
     public class MessageController : Controller
     {
-        private readonly string MessagingAIStartEndpoint = "messages/conversations/:engageAI";
-        private readonly string MessagingAIElevateEndpoint = "messages/conversations/:engageAI";
+        private readonly string MessagingAIStartEndpoint = "messages/conversations:engageAI";
+        private readonly string MessagingAIElevateEndpoint = "messages/conversations:engageAI";
         private readonly string MessagingAIDeElevateEndpoint = "messages/conversations/{0}:disengageAI";
         private readonly string MessagingAIDeliveryFunctionResultEndpoint = "messages/conversations/{0}:deliverFunctionResults";
         private readonly string MessagingAIApiVersion = "api-version=2023-11-01-preview";
@@ -49,9 +49,14 @@ namespace viewer.Controllers
         }
 
         // Action method for SetEnvironment
-        public IActionResult SetEnvironment(string environment, string channelRegistrationId, string phoneNumber, bool shouldUseAISdk)
+        public IActionResult SetEnvironment(string environment, string channelRegistrationId, string phoneNumber, bool shouldUseAISdk, bool detectFunctionsOneByOne)
         {
-            environmentManagerService.SetEnvironment(environment, channelRegistrationId, phoneNumber, shouldUseAISdk);
+            environmentManagerService.SetEnvironment(
+                environment,
+                channelRegistrationId,
+                phoneNumber,
+                shouldUseAISdk,
+                detectFunctionsOneByOne);
             return ReturnChatView();
         }
 
@@ -113,10 +118,14 @@ namespace viewer.Controllers
 
                 HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
                 httpRequestMessage.Content = new StringContent(
-                    GetElevateOrStartAIRequestBody(currentSelectedParams, businessInitiatedMessageType: Models.BusinessInitiatedMessageType.BusinessTextMessage, initialMessage: initialMessage),
+                    GetElevateOrStartAIRequestBody(currentSelectedParams, businessInitiatedMessageType: Models.BusinessMessageKind.TextMessage, initialMessage: initialMessage),
                     Encoding.UTF8,
                     "application/json");
                 httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+                if (environmentManagerService.DetectFunctionsOneByOne)
+                {
+                    httpRequestMessage.Headers.Add(EnvironmentManagerService.DetectFunctionsOptionsHeaderName, "true");
+                }
 
                 // Add HMAC auth, set content, method, requestUri before calling this method
                 await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
@@ -189,7 +198,7 @@ namespace viewer.Controllers
                 httpRequestMessage.Content = new StringContent(
                     GetElevateOrStartAIRequestBody(
                         currentSelectedParams,
-                        businessInitiatedMessageType: Models.BusinessInitiatedMessageType.BusinessTemplateMessage,
+                        businessInitiatedMessageType: Models.BusinessMessageKind.TemplateMessage,
                         template: GetCheckupConfirmationTemplateJson(
                             templateName,
                             "Daniela",
@@ -198,6 +207,10 @@ namespace viewer.Controllers
                     Encoding.UTF8,
                     "application/json");
                 httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+                if (environmentManagerService.DetectFunctionsOneByOne)
+                {
+                    httpRequestMessage.Headers.Add(EnvironmentManagerService.DetectFunctionsOptionsHeaderName, "true");
+                }
 
                 // Add HMAC auth, set content, method, requestUri before calling this method
                 await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
@@ -267,10 +280,14 @@ namespace viewer.Controllers
                 // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
                 HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIElevateEndpoint));
                 httpRequestMessage.Content = new StringContent(
-                    GetElevateOrStartAIRequestBody(currentSelectedParams, userInitiatedMessageType: SDKNamespace.UserInitiatedMessageType.UserTextMessage, initialMessage: initialMessage),
+                    GetElevateOrStartAIRequestBody(currentSelectedParams, userInitiatedMessageType: Models.UserMessageKind.TextMessage, initialMessage: initialMessage),
                     Encoding.UTF8,
                     "application/json");
                 httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+                if (environmentManagerService.DetectFunctionsOneByOne)
+                {
+                    httpRequestMessage.Headers.Add(EnvironmentManagerService.DetectFunctionsOptionsHeaderName, "true");
+                }
 
                 // Add HMAC auth, set content, method, requestUri before calling this method
                 await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
@@ -505,6 +522,7 @@ namespace viewer.Controllers
             ViewData["PhoneNumber"] = currentSelectedParams.RecipientList[0];
             ViewData["ConversationId"] = environmentManagerService.ConversationId;
             ViewData["UseAISdk"] = environmentManagerService.UseAISdk;
+            ViewData["DetectFunctionsOneByOne"] = environmentManagerService.DetectFunctionsOneByOne;
 
             return View("Chat");
         }
@@ -579,22 +597,22 @@ namespace viewer.Controllers
 
         private string GetElevateOrStartAIRequestBody(
             EnvironmentSpecificParams currentSelectedParams,
-            SDKNamespace.UserInitiatedMessageType? userInitiatedMessageType = default,
-            Models.BusinessInitiatedMessageType? businessInitiatedMessageType = default,
+            Models.UserMessageKind? userInitiatedMessageType = default,
+            Models.BusinessMessageKind? businessInitiatedMessageType = default,
             string initialMessage = default,
             object template = default)
         {
             var businessInitiatedMessage = (businessInitiatedMessageType is null) ? default : new
             {
                 Content = initialMessage,
-                Type = businessInitiatedMessageType.ToString(),
+                Kind = businessInitiatedMessageType.ToString(),
                 Template = template,
             };
 
             var userInitiatedMessage = (userInitiatedMessageType is null) ? default : new
             {
                 Content = initialMessage,
-                Type = userInitiatedMessageType.ToString(),
+                Kind = userInitiatedMessageType.ToString(),
                 Template = template,
             };
 
@@ -610,8 +628,8 @@ namespace viewer.Controllers
                     Greeting = "Hi, I'm Kai, your virtual assistant. How can I help you today?",
                     Functions = PatientRegistrationMethods.GetFunctionDefinitions(),
                 },
-                BusinessInitiatedMessage = businessInitiatedMessage,
-                UserInitiatedMessage = userInitiatedMessage,
+                MessageToSend = businessInitiatedMessage,
+                MessageReceived = userInitiatedMessage,
             };
 
             var returnString = JsonConvert.SerializeObject(returnObj);

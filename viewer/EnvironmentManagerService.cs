@@ -2,6 +2,10 @@
 using System;
 using viewer.Controllers;
 using Azure.Communication.Messages;
+using Azure.Core.Pipeline;
+using Azure.Core;
+using System.Net.Http.Headers;
+using System.Threading.Tasks;
 
 namespace viewer
 {
@@ -28,6 +32,8 @@ namespace viewer
 
     public class EnvironmentManagerService
     {
+        public static readonly string DetectFunctionsOptionsHeaderName = "should-detect-functions-onebyone";
+
         private TargetEnvironment currentTargetEnvironment = TargetEnvironment.INT;
         private EnvironmentSpecificParams localIntParams = new EnvironmentSpecificParams()
         {
@@ -77,6 +83,9 @@ namespace viewer
         private bool useAISdk = true;
         public bool UseAISdk { get => useAISdk; set => useAISdk = value; }
 
+        private bool detectFunctionsOneByOne = true;
+        public bool DetectFunctionsOneByOne { get => detectFunctionsOneByOne; set => detectFunctionsOneByOne = value; }
+
         public EnvironmentSpecificParams GetCurrentEnvironment() => currentSelectedParams;
 
         public EnvironmentManagerService()
@@ -90,10 +99,15 @@ namespace viewer
                 _ => throw new ArgumentException($"Invalid target environment: {currentTargetEnvironment}"),
             };
 
-            InitializeEnvironment(currentSelectedParams.ChannelRegistrationId, currentSelectedParams.RecipientList[0], UseAISdk);
+            InitializeEnvironment(currentSelectedParams.ChannelRegistrationId, currentSelectedParams.RecipientList[0], UseAISdk, DetectFunctionsOneByOne);
         }
 
-        public void SetEnvironment(string environment, string channelRegistrationId, string phoneNumber, bool shouldUseAISdk = true)
+        public void SetEnvironment(
+            string environment,
+            string channelRegistrationId,
+            string phoneNumber,
+            bool shouldUseAISdk = true,
+            bool detectFunctionsOneByOne = false)
         {
             currentTargetEnvironment = environment.ToLower() switch
             {
@@ -104,10 +118,10 @@ namespace viewer
                 _ => throw new ArgumentException($"Invalid target environment: {environment}"),
             };
 
-            InitializeEnvironment(channelRegistrationId, phoneNumber, shouldUseAISdk);
+            InitializeEnvironment(channelRegistrationId, phoneNumber, shouldUseAISdk, detectFunctionsOneByOne);
         }
 
-        private void InitializeEnvironment(string channelRegistrationId, string phoneNumber, bool shouldUseAISdk)
+        private void InitializeEnvironment(string channelRegistrationId, string phoneNumber, bool shouldUseAISdk, bool detectFunctionsOneByOne)
         {
             currentSelectedParams = currentTargetEnvironment switch
             {
@@ -120,18 +134,27 @@ namespace viewer
 
             conversationId = default;
             useAISdk = shouldUseAISdk;
+            DetectFunctionsOneByOne = detectFunctionsOneByOne;
 
             if (!string.IsNullOrWhiteSpace(currentSelectedParams.AcsConnectionString))
             {
-                var options = new CommunicationMessagesClientOptions(CommunicationMessagesClientOptions.ServiceVersion.V2023_08_24_Preview);
-                currentSelectedParams.NotificationMessagesClient = new NotificationMessagesClient(currentSelectedParams.AcsConnectionString, options);
+                // var options = new CommunicationMessagesClientOptions(CommunicationMessagesClientOptions.ServiceVersion.V2023_08_24_Preview);
+                currentSelectedParams.NotificationMessagesClient = new NotificationMessagesClient(currentSelectedParams.AcsConnectionString);
             }
 
             if (shouldUseAISdk)
             {
                 if (!string.IsNullOrWhiteSpace(currentSelectedParams.AcsConnectionString))
                 {
-                    currentSelectedParams.NotificationMessagesOpenAIClient = new NotificationMessagesOpenAIClient(currentSelectedParams.AcsConnectionString);
+                    var headers = new Dictionary<string, string>()
+                    {
+                        { DetectFunctionsOptionsHeaderName, DetectFunctionsOneByOne.ToString() },
+                    };
+
+                    var options = new CommunicationMessagesClientOptions();
+                    options.AddPolicy(new AddHeadersPolicy(headers), Azure.Core.HttpPipelinePosition.PerCall);
+
+                    currentSelectedParams.NotificationMessagesOpenAIClient = new NotificationMessagesOpenAIClient(currentSelectedParams.AcsConnectionString, options);
                 }
             }
 
@@ -189,6 +212,37 @@ namespace viewer
             }
 
             return false;
+        }
+    }
+
+    internal class AddHeadersPolicy : HttpPipelinePolicy
+    {
+        private readonly Dictionary<string, string> headers;
+
+        // constructor with list of headers assigned to _headers
+        public AddHeadersPolicy(Dictionary<string, string> headers)
+        {
+            this.headers = headers;
+        }
+
+        public override void Process(HttpMessage message, ReadOnlyMemory<HttpPipelinePolicy> pipeline)
+        {
+            foreach (var header in headers)
+            {
+                message.Request.Headers.Add(header.Key, header.Value);
+            }
+
+            ProcessNext(message, pipeline);
+        }
+
+        public async override ValueTask ProcessAsync(HttpMessage message, ReadOnlyMemory<HttpPipelinePolicy> pipeline)
+        {
+            foreach (var header in headers)
+            {
+                message.Request.Headers.Add(header.Key, header.Value);
+            }
+
+            await ProcessNextAsync(message, pipeline);
         }
     }
 }

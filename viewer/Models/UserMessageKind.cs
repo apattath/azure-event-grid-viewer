@@ -6,14 +6,11 @@ using System.Runtime.Serialization;
 namespace viewer.Models;
 
 /// <summary>
-/// The type of user message. Supports text, image, template.
+/// The type of user message. Supports text
 /// </summary>
 [JsonConverter(typeof(StringEnumConverter), typeof(CamelCaseNamingStrategy), new object[0], false)]
-public enum UserInitiatedMessageType
+public enum UserMessageKind
 {
-    [EnumMember(Value = "user-text-message")]
-    UserInitiatedTextMessage,
-
-    [EnumMember(Value = "user-response")]
-    UserResponseMessage,
+    [EnumMember(Value = "textMessage")]
+    TextMessage,
 }
