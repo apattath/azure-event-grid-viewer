@@ -87,8 +87,7 @@ namespace viewer.Controllers
 
             if (environmentManagerService.UseAISdk)
             {
-                var options = GetBusinessInitiatedConversationOptions(
-                    SDKNamespace.BusinessInitiatedMessageType.BusinessTextMessage,
+                var options = GetBusinessTextConversationOptions(
                     currentSelectedParams,
                     initialMessage: initialMessage);
 
@@ -165,8 +164,7 @@ namespace viewer.Controllers
                 // Send Sample Template sample_template
                 MessageTemplate sampleTemplate = AssembleSampleTemplate(templateName);
 
-                var options = GetBusinessInitiatedConversationOptions(
-                    SDKNamespace.BusinessInitiatedMessageType.BusinessTemplateMessage,
+                var options = GetBusinessTemplateConversationOptions(
                     currentSelectedParams,
                     messageTemplate: sampleTemplate);
 
@@ -636,7 +634,7 @@ namespace viewer.Controllers
             return returnString;
         }
 
-        private static UserInitiatedConversationOptions GetUserInitiatedConversationOptions(
+        private static UserTextConversationOptions GetUserInitiatedConversationOptions(
             string initialMessage,
             EnvironmentSpecificParams currentSelectedParams)
         {
@@ -651,20 +649,44 @@ namespace viewer.Controllers
                 aiAgentConfiguration.Functions.Add(function.ToAIFunctionDefinition());
             }
 
-            var userInitiatedMessage = new UserInitiatedMessage(SDKNamespace.UserInitiatedMessageType.UserTextMessage);
+            var userInitiatedMessage = new UserTextMessageOptions(SDKNamespace.UserMessageKind.TextMessage);
             userInitiatedMessage.Content = initialMessage;
-            userInitiatedMessage.Template = default;
 
-            var userInitiatedConversationOptions = new UserInitiatedConversationOptions(
+            var userInitiatedConversationOptions = new UserTextConversationOptions(
                 channelRegistrationId: currentSelectedParams.ChannelRegistrationId,
                 to: currentSelectedParams.RecipientList.FirstOrDefault(),
                 agentConfiguration: aiAgentConfiguration,
-                userInitiatedMessage: userInitiatedMessage);
+                userTextMessage: userInitiatedMessage);
             return userInitiatedConversationOptions;
         }
 
-        private static BusinessInitiatedConversationOptions GetBusinessInitiatedConversationOptions(
-            SDKNamespace.BusinessInitiatedMessageType businessInitiatedMessageType,
+        private static BusinessTemplateConversationOptions GetBusinessTemplateConversationOptions(
+            EnvironmentSpecificParams currentSelectedParams,
+            MessageTemplate messageTemplate = default)
+        {
+            var aiAgentConfiguration = new AgentConfiguration(
+                "https://intelligent-routing-fhl.openai.azure.com/",
+                "test",
+                "Hi, I'm Kai, your virtual assistant. How can I help you today?",
+                "2023-07-01-preview");
+
+            foreach (var function in PatientRegistrationMethods.GetFunctionDefinitions())
+            {
+                aiAgentConfiguration.Functions.Add(function.ToAIFunctionDefinition());
+            }
+
+            var businessInitiatedMessage = new BusinessTemplateMessageOptions(SDKNamespace.BusinessMessageKind.TemplateMessage);
+            businessInitiatedMessage.Template = messageTemplate;
+
+            var businessTemplateConversationOptions = new BusinessTemplateConversationOptions(
+                channelRegistrationId: currentSelectedParams.ChannelRegistrationId,
+                to: currentSelectedParams.RecipientList.FirstOrDefault(),
+                agentConfiguration: aiAgentConfiguration,
+                businessTemplateMessage: businessInitiatedMessage);
+            return businessTemplateConversationOptions;
+        }
+
+        private static BusinessTextConversationOptions GetBusinessTextConversationOptions(
             EnvironmentSpecificParams currentSelectedParams,
             string initialMessage = default,
             MessageTemplate messageTemplate = default)
@@ -680,16 +702,15 @@ namespace viewer.Controllers
                 aiAgentConfiguration.Functions.Add(function.ToAIFunctionDefinition());
             }
 
-            var businessInitiatedMessage = new BusinessInitiatedMessage(businessInitiatedMessageType);
+            var businessInitiatedMessage = new BusinessTextMessageOptions(SDKNamespace.BusinessMessageKind.TextMessage);
             businessInitiatedMessage.Content = initialMessage;
-            businessInitiatedMessage.Template = messageTemplate;
 
-            var businessInitiatedConversationOptions = new BusinessInitiatedConversationOptions(
+            var businessTextConversationOptions = new BusinessTextConversationOptions(
                 channelRegistrationId: currentSelectedParams.ChannelRegistrationId,
                 to: currentSelectedParams.RecipientList.FirstOrDefault(),
                 agentConfiguration: aiAgentConfiguration,
-                businessInitiatedMessage: businessInitiatedMessage);
-            return businessInitiatedConversationOptions;
+                businessTextMessage: businessInitiatedMessage);
+            return businessTextConversationOptions;
         }
 
         private string GetDeElevateToAIRequestBody(EnvironmentSpecificParams currentSelectedParams, string initialMessage)

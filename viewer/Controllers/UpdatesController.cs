@@ -185,7 +185,6 @@ namespace viewer.Controllers
             {
                 case OpenAiEventType.AIFunctionCallRequested:
                     return HandleAIFunctionCallRequestedEvent(details);
-                    break;
                 case OpenAiEventType.AIGeneratedMessageSent:
                     break;
                 case OpenAiEventType.AIDisengaged:
