@@ -1,5 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using Azure.Communication.Messages;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace viewer.Models;
@@ -26,4 +28,12 @@ public class AIFunctionDto
     [JsonPropertyName("parameters")]
     [Required]
     public IEnumerable<AIFunctionParameterDto> Parameters { get; set; }
+
+    public AIFunctionDefinition ToAIFunctionDefinition()
+    {
+        return new AIFunctionDefinition(
+            Name,
+            Description,
+            Parameters.Select(p => p.ToAIFunctionParameterDefinition()).ToList());
+    }
 }

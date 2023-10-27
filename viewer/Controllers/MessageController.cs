@@ -19,12 +19,14 @@ using viewer.Models;
 using viewer.Shared;
 using viewer.Views.Message;
 
+using SDKNamespace = Azure.Communication.Messages;
+
 namespace viewer.Controllers
 {
     public class MessageController : Controller
     {
-        private readonly string MessagingAIStartEndpoint = "messages/conversations/:engageAI";
-        private readonly string MessagingAIElevateEndpoint = "messages/conversations/:engageAI";
+        private readonly string MessagingAIStartEndpoint = "messages/conversations:engageAI";
+        private readonly string MessagingAIElevateEndpoint = "messages/conversations:engageAI";
         private readonly string MessagingAIDeElevateEndpoint = "messages/conversations/{0}:disengageAI";
         private readonly string MessagingAIDeliveryFunctionResultEndpoint = "messages/conversations/{0}:deliverFunctionResults";
         private readonly string MessagingAIApiVersion = "api-version=2023-11-01-preview";
@@ -47,9 +49,14 @@ namespace viewer.Controllers
         }
 
         // Action method for SetEnvironment
-        public IActionResult SetEnvironment(string environment, string channelRegistrationId, string phoneNumber)
+        public IActionResult SetEnvironment(string environment, string channelRegistrationId, string phoneNumber, bool shouldUseAISdk, bool detectFunctionsOneByOne)
         {
-            environmentManagerService.SetEnvironment(environment, channelRegistrationId, phoneNumber);
+            environmentManagerService.SetEnvironment(
+                environment,
+                channelRegistrationId,
+                phoneNumber,
+                shouldUseAISdk,
+                detectFunctionsOneByOne);
             return ReturnChatView();
         }
 
@@ -78,38 +85,72 @@ namespace viewer.Controllers
         {
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
-            var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint);
-
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
-            httpRequestMessage.Content = new StringContent(
-                GetElevateOrStartAIRequestBody(currentSelectedParams, businessInitiatedMessageType: BusinessIntiatedMessageType.BusinessTextMessage, initialMessage: initialMessage),
-                Encoding.UTF8,
-                "application/json");
-            httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
-
-            // Add HMAC auth, set content, method, requestUri before calling this method
-            await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
-
-            // Send a notification to user about adding an AI agent.
-            await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
-
-            // Send the request and get the response
-            HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
-            var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
-
-            if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
-                httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+            if (environmentManagerService.UseAISdk)
             {
-                ViewData["StartAITextMessage"] = "Enabled";
-                environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
-            }
-            else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                ViewData["StartAITextMessage"] = "Already enabled";
+                var options = GetBusinessInitiatedConversationOptions(
+                    SDKNamespace.BusinessInitiatedMessageType.BusinessTextMessage,
+                    currentSelectedParams,
+                    initialMessage: initialMessage);
+
+                var engageAIResponse = await currentSelectedParams.NotificationMessagesOpenAIClient.EngageAIEnabledConversationAsync(options);
+                var engageAIRawResponse = engageAIResponse.GetRawResponse();
+
+                if (!engageAIRawResponse.IsError)
+                {
+                    ViewData["StartAITextMessage"] = "Enabled";
+                    environmentManagerService.ConversationId = engageAIResponse.Value.ConversationId;
+                }
+                else
+                {
+                    ViewData["StartAITextMessage"] = $"Error elevating to AI conversation: {engageAIRawResponse.Content}";
+                }
+
+                // print all the headers in httpResponseMessage
+                foreach (var header in engageAIRawResponse.Headers)
+                {
+                    ViewData["StartAITextMessage"] = ViewData["StartAITextMessage"]?.ToString() + $"\n{header.Name}: {header.Value}";
+                }
+
             }
             else
             {
-                ViewData["StartAITextMessage"] = $"Error starting AI-enabled conversation: {responseContent}";
+                var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint);
+
+                HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
+                httpRequestMessage.Content = new StringContent(
+                    GetElevateOrStartAIRequestBody(currentSelectedParams, businessInitiatedMessageType: Models.BusinessMessageKind.TextMessage, initialMessage: initialMessage),
+                    Encoding.UTF8,
+                    "application/json");
+                httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+                if (environmentManagerService.DetectFunctionsOneByOne)
+                {
+                    httpRequestMessage.Headers.Add(EnvironmentManagerService.DetectFunctionsOptionsHeaderName, "true");
+                }
+
+                // Add HMAC auth, set content, method, requestUri before calling this method
+                await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+                // Send a notification to user about adding an AI agent.
+                await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
+
+                // Send the request and get the response
+                HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+
+                if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
+                    httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+                {
+                    ViewData["StartAITextMessage"] = "Enabled";
+                    environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
+                }
+                else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
+                {
+                    ViewData["StartAITextMessage"] = "Already enabled";
+                }
+                else
+                {
+                    ViewData["StartAITextMessage"] = $"Error starting AI-enabled conversation: {responseContent}";
+                }
             }
 
             return ReturnChatView();
@@ -119,56 +160,82 @@ namespace viewer.Controllers
         {
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
-            MessageTemplateClient messageTemplateClient = new MessageTemplateClient(currentSelectedParams.AcsConnectionString);
-            Pageable<MessageTemplateItem> templates = messageTemplateClient.GetTemplates(currentSelectedParams.ChannelRegistrationId);
-            foreach (MessageTemplateItem template in templates)
+            if (environmentManagerService.UseAISdk)
             {
-                Console.WriteLine("Name: {0}\tLanguage: {1}\tStatus: {2}\tChannelType: {3}\nContent: {4}\n",
-                    template.Name, template.Language, template.Status, template.ChannelType, template.WhatsApp.Content);
-            }
+                // Send Sample Template sample_template
+                MessageTemplate sampleTemplate = AssembleSampleTemplate(templateName);
 
-            // Send Sample Template sample_template
-            MessageTemplate sampleTemplate = AssembleSampleTemplate(templateName);
-
-            var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint);
-
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
-            httpRequestMessage.Content = new StringContent(
-                GetElevateOrStartAIRequestBody(
+                var options = GetBusinessInitiatedConversationOptions(
+                    SDKNamespace.BusinessInitiatedMessageType.BusinessTemplateMessage,
                     currentSelectedParams,
-                    businessInitiatedMessageType: BusinessIntiatedMessageType.BusinessTemplateMessage,
-                    template: GetCheckupConfirmationTemplateJson(
-                        templateName,
-                        "Daniela",
-                        "Daniela wants to schedule a doctor appointment.",
-                        "Daniela doesn't want to schedule a doctor appointment at this time.")),
-                Encoding.UTF8,
-                "application/json");
-            httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+                    messageTemplate: sampleTemplate);
 
-            // Add HMAC auth, set content, method, requestUri before calling this method
-            await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+                var engageAIResponse = await currentSelectedParams.NotificationMessagesOpenAIClient.EngageAIEnabledConversationAsync(options);
+                var engageAIRawResponse = engageAIResponse.GetRawResponse();
 
-            // Send a notification to user about adding an AI agent.
-            await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
+                if (!engageAIRawResponse.IsError)
+                {
+                    ViewData["StartAITemplateMessage"] = "Enabled";
+                    environmentManagerService.ConversationId = engageAIResponse.Value.ConversationId;
+                }
+                else
+                {
+                    ViewData["StartAITemplateMessage"] = $"Error elevating to AI conversation: {engageAIRawResponse.Content}";
+                }
 
-            // Send the request and get the response
-            HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
-            var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+                // print all the headers in httpResponseMessage
+                foreach (var header in engageAIRawResponse.Headers)
+                {
+                    ViewData["StartAITemplateMessage"] = ViewData["StartAITemplateMessage"]?.ToString() + $"\n{header.Name}: {header.Value}";
+                }
 
-            if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
-                httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
-            {
-                ViewData["StartAITemplateMessage"] = "Enabled";
-                environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
-            }
-            else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                ViewData["StartAITemplateMessage"] = "Already enabled";
             }
             else
             {
-                ViewData["StartAITemplateMessage"] = $"Error starting AI-enabled conversation: {responseContent}";
+                var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIStartEndpoint);
+
+                HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
+                httpRequestMessage.Content = new StringContent(
+                    GetElevateOrStartAIRequestBody(
+                        currentSelectedParams,
+                        businessInitiatedMessageType: Models.BusinessMessageKind.TemplateMessage,
+                        template: GetCheckupConfirmationTemplateJson(
+                            templateName,
+                            "Daniela",
+                            "Daniela wants to schedule a doctor appointment.",
+                            "Daniela doesn't want to schedule a doctor appointment at this time.")),
+                    Encoding.UTF8,
+                    "application/json");
+                httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+                if (environmentManagerService.DetectFunctionsOneByOne)
+                {
+                    httpRequestMessage.Headers.Add(EnvironmentManagerService.DetectFunctionsOptionsHeaderName, "true");
+                }
+
+                // Add HMAC auth, set content, method, requestUri before calling this method
+                await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+                // Send a notification to user about adding an AI agent.
+                await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
+
+                // Send the request and get the response
+                HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+
+                if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
+                    httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+                {
+                    ViewData["StartAITemplateMessage"] = "Enabled";
+                    environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
+                }
+                else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
+                {
+                    ViewData["StartAITemplateMessage"] = "Already enabled";
+                }
+                else
+                {
+                    ViewData["StartAITemplateMessage"] = $"Error starting AI-enabled conversation: {responseContent}";
+                }
             }
 
             return ReturnChatView();
@@ -184,43 +251,74 @@ namespace viewer.Controllers
 
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
-            // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIElevateEndpoint));
-            httpRequestMessage.Content = new StringContent(
-                GetElevateOrStartAIRequestBody(currentSelectedParams, userInitiatedMessageType: UserInitiatedMessageType.UserInitiatedTextMessage, initialMessage: initialMessage),
-                Encoding.UTF8,
-                "application/json");
-            httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
-
-            // Add HMAC auth, set content, method, requestUri before calling this method
-            await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
-
-            // Send a notification to user about adding an AI agent.
-            await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
-
-            // Send the request and get the response
-            HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
-            var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
-
-            if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
-                httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+            if (environmentManagerService.UseAISdk)
             {
-                ViewData["AIEngagementStatus"] = "Enabled";
-                environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
-            }
-            else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                ViewData["AIEngagementStatus"] = "Already enabled";
+                var options = GetUserInitiatedConversationOptions(initialMessage, currentSelectedParams);
+
+                var engageAIResponse = await currentSelectedParams.NotificationMessagesOpenAIClient.EngageAIEnabledConversationAsync(options);
+                var engageAIRawResponse = engageAIResponse.GetRawResponse();
+
+                if (!engageAIRawResponse.IsError)
+                {
+                    ViewData["AIEngagementStatus"] = "Enabled";
+                    environmentManagerService.ConversationId = engageAIResponse.Value.ConversationId;
+                }
+                else
+                {
+                    ViewData["AIEngagementStatus"] = $"Error elevating to AI conversation: {engageAIRawResponse.Content}";
+                }
+
+                // print all the headers in httpResponseMessage
+                foreach (var header in engageAIRawResponse.Headers)
+                {
+                    ViewData["AIEngagementStatus"] = ViewData["AIEngagementStatus"]?.ToString() + $"\n{header.Name}: {header.Value}";
+                }
+
             }
             else
             {
-                ViewData["AIEngagementStatus"] = $"Error elevating to AI conversation: {responseContent}";
-            }
+                // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
+                HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, GetFullApiUri(currentSelectedParams.CpmEndpoint, MessagingAIElevateEndpoint));
+                httpRequestMessage.Content = new StringContent(
+                    GetElevateOrStartAIRequestBody(currentSelectedParams, userInitiatedMessageType: Models.UserMessageKind.TextMessage, initialMessage: initialMessage),
+                    Encoding.UTF8,
+                    "application/json");
+                httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+                if (environmentManagerService.DetectFunctionsOneByOne)
+                {
+                    httpRequestMessage.Headers.Add(EnvironmentManagerService.DetectFunctionsOptionsHeaderName, "true");
+                }
 
-            // print all the headers in httpResponseMessage
-            foreach (var header in httpResponseMessage.Headers)
-            {
-                ViewData["AIEngagementStatus"] = ViewData["AIEngagementStatus"]?.ToString() + $"\n{header.Key}: {header.Value.FirstOrDefault()}";
+                // Add HMAC auth, set content, method, requestUri before calling this method
+                await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+                // Send a notification to user about adding an AI agent.
+                await SendMessageToUserAsync("[An AI agent has been added to this conversation.]");
+
+                // Send the request and get the response
+                HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+
+                if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
+                    httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+                {
+                    ViewData["AIEngagementStatus"] = "Enabled";
+                    environmentManagerService.ConversationId = JsonConvert.DeserializeObject<AIEngagementResponse>(responseContent).ConversationId;
+                }
+                else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Conflict)
+                {
+                    ViewData["AIEngagementStatus"] = "Already enabled";
+                }
+                else
+                {
+                    ViewData["AIEngagementStatus"] = $"Error elevating to AI conversation: {responseContent}";
+                }
+
+                // print all the headers in httpResponseMessage
+                foreach (var header in httpResponseMessage.Headers)
+                {
+                    ViewData["AIEngagementStatus"] = ViewData["AIEngagementStatus"]?.ToString() + $"\n{header.Key}: {header.Value.FirstOrDefault()}";
+                }
             }
 
             return ReturnChatView();
@@ -241,42 +339,67 @@ namespace viewer.Controllers
                 return View("Chat");
             }
 
-            var endpointPath = string.Format(MessagingAIDeElevateEndpoint, environmentManagerService.ConversationId);
-            var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, endpointPath);
-
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
-            httpRequestMessage.Content = new StringContent(
-                GetDeElevateToAIRequestBody(currentSelectedParams, initialMessage),
-                Encoding.UTF8,
-                "application/json");
-            httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
-
-            // Add HMAC auth, set content, method, requestUri before calling this method
-            await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
-
-            // Send the request and get the response
-            HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
-
-            if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
-                               httpResponseMessage.StatusCode == System.Net.HttpStatusCode.NoContent)
+            if (environmentManagerService.UseAISdk)
             {
-                ViewData["AIDisengagementStatus"] = "Disengaged successfully.";
-                await SendMessageToUserAsync("[AI agent has been removed from this conversation.]");
-            }
-            else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                ViewData["AIDisengagementStatus"] = "Already disengaged.";
+                var disengageAIResponse = await currentSelectedParams.NotificationMessagesOpenAIClient.DisengageAIFromConversationAsync(
+                    environmentManagerService.ConversationId,
+                    new AIDisengagementOptions(SDKNamespace.AIDisengagementReason.ConversationCompleted));
+
+                if (!disengageAIResponse.IsError)
+                {
+                    ViewData["AIDisengagementStatus"] = "Disengaged successfully.";
+                    await SendMessageToUserAsync("[AI agent has been removed from this conversation.]");
+                }
+                else
+                {
+                    ViewData["AIDisengagementStatus"] = $"Error de-elevating AI conversation: {disengageAIResponse.Content}";
+                }
+
+                // print all the headers in httpResponseMessage
+                foreach (var header in disengageAIResponse.Headers)
+                {
+                    ViewData["AIDisengagementStatus"] = ViewData["AIDisengagementStatus"]?.ToString() + $"\n{header.Name}: {header.Value}";
+                }
             }
             else
             {
-                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
-                ViewData["AIDisengagementStatus"] = $"Error de-elevating AI conversation: {responseContent}";
-            }
+                var endpointPath = string.Format(MessagingAIDeElevateEndpoint, environmentManagerService.ConversationId);
+                var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, endpointPath);
 
-            // print all the headers in httpResponseMessage
-            foreach (var header in httpResponseMessage.Headers)
-            {
-                ViewData["AIDisengagementStatus"] = ViewData["AIDisengagementStatus"]?.ToString() + $"\n{header.Key}: {header.Value.FirstOrDefault()}";
+                HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
+                httpRequestMessage.Content = new StringContent(
+                    GetDeElevateToAIRequestBody(currentSelectedParams, initialMessage),
+                    Encoding.UTF8,
+                    "application/json");
+                httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+
+                // Add HMAC auth, set content, method, requestUri before calling this method
+                await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+                // Send the request and get the response
+                HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+
+                if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
+                                   httpResponseMessage.StatusCode == System.Net.HttpStatusCode.NoContent)
+                {
+                    ViewData["AIDisengagementStatus"] = "Disengaged successfully.";
+                    await SendMessageToUserAsync("[AI agent has been removed from this conversation.]");
+                }
+                else if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    ViewData["AIDisengagementStatus"] = "Already disengaged.";
+                }
+                else
+                {
+                    var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+                    ViewData["AIDisengagementStatus"] = $"Error de-elevating AI conversation: {responseContent}";
+                }
+
+                // print all the headers in httpResponseMessage
+                foreach (var header in httpResponseMessage.Headers)
+                {
+                    ViewData["AIDisengagementStatus"] = ViewData["AIDisengagementStatus"]?.ToString() + $"\n{header.Key}: {header.Value.FirstOrDefault()}";
+                }
             }
 
             return ReturnChatView();
@@ -286,46 +409,69 @@ namespace viewer.Controllers
         {
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
-            //var actualFunctionResult = functionResult switch
-            //{
-            //    "RetrievePatientRegistrationInfo" => "{\"errorResponse\": \"error retrieving patient information due to invalid ID.\"}",
-            //    "RegisterPatient" => "{\"patientName\": \"John Doe\", \"insuranceID\":\"ID00000\"}",
-            //    _ => "Unknown"
-            //};
-
             if (string.IsNullOrEmpty(environmentManagerService.ConversationId))
             {
                 ViewData["DeliverFunctionResultStatus"] = "Error: conversationId is empty. Please call \"EngageAI\" method first.";
                 return View("Chat");
             }
 
-            var endpointPath = string.Format(MessagingAIDeliveryFunctionResultEndpoint, environmentManagerService.ConversationId);
-            var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, endpointPath);
-
-            // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
-            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
-            httpRequestMessage.Content = new StringContent(
-                GetDeliveryFunctionResultRequestBody(currentSelectedParams, functionResult, functionName),
-                Encoding.UTF8,
-                "application/json");
-            httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
-
-            // Add HMAC auth, set content, method, requestUri before calling this method
-            await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
-
-            // Send the request and get the response
-            HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
-
-            ViewData["functionName"] = functionName;
-            if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
-                httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+            if (environmentManagerService.UseAISdk)
             {
-                ViewData["DeliverFunctionResultStatus"] = "Delivered result of function call";
+                var options = new AIDeliverFunctionResultOptions(
+                    currentSelectedParams.RecipientList.FirstOrDefault(),
+                    functionName,
+                    functionResult);
+
+                var deliverFunctionResultResponse = await currentSelectedParams.NotificationMessagesOpenAIClient.DeliverFunctionResultToAIConversationAsync(
+                    environmentManagerService.ConversationId,
+                    options);
+
+                ViewData["functionName"] = functionName;
+                if (!deliverFunctionResultResponse.IsError)
+                {
+                    ViewData["DeliverFunctionResultStatus"] = "Delivered result of function call";
+                }
+                else
+                {
+                    ViewData["DeliverFunctionResultStatus"] = $"Error delivering function result: {deliverFunctionResultResponse.Content}";
+                }
+
+                // print all the headers in httpResponseMessage
+                foreach (var header in deliverFunctionResultResponse.Headers)
+                {
+                    ViewData["DeliverFunctionResultStatus"] = ViewData["DeliverFunctionResultStatus"]?.ToString() + $"\n{header.Name}: {header.Value}";
+                }
             }
             else
             {
-                var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
-                ViewData["DeliverFunctionResultStatus"] = $"Error delivering function result: {responseContent}";
+                var endpointPath = string.Format(MessagingAIDeliveryFunctionResultEndpoint, environmentManagerService.ConversationId);
+                var fullApiUri = GetFullApiUri(currentSelectedParams.CpmEndpoint, endpointPath);
+
+                // Create a HttpRequestMessage object with the POST method and the MessagingAIElevateEndpoint as the relative path and api-version as query params
+                HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, fullApiUri);
+                httpRequestMessage.Content = new StringContent(
+                    GetDeliveryFunctionResultRequestBody(currentSelectedParams, functionResult, functionName),
+                    Encoding.UTF8,
+                    "application/json");
+                httpRequestMessage.Headers.Add("x-ms-client-request-id", Guid.NewGuid().ToString());
+
+                // Add HMAC auth, set content, method, requestUri before calling this method
+                await httpAuthenticator.AddAuthenticationAsync(httpRequestMessage, currentSelectedParams.AccessKey);
+
+                // Send the request and get the response
+                HttpResponseMessage httpResponseMessage = await httpClient.SendAsync(httpRequestMessage);
+
+                ViewData["functionName"] = functionName;
+                if (httpResponseMessage.StatusCode == System.Net.HttpStatusCode.OK ||
+                    httpResponseMessage.StatusCode == System.Net.HttpStatusCode.Accepted)
+                {
+                    ViewData["DeliverFunctionResultStatus"] = "Delivered result of function call";
+                }
+                else
+                {
+                    var responseContent = await httpResponseMessage.Content.ReadAsStringAsync();
+                    ViewData["DeliverFunctionResultStatus"] = $"Error delivering function result: {responseContent}";
+                }
             }
 
             return ReturnChatView();
@@ -342,7 +488,7 @@ namespace viewer.Controllers
             var currentSelectedParams = environmentManagerService.GetCurrentEnvironment() ?? throw new ArgumentNullException("No environment selected.");
 
             var sendTextMessageOptions = new SendMessageOptions(currentSelectedParams.ChannelRegistrationId, currentSelectedParams.RecipientList, message);
-            Response<SendMessageResult> sendTextMessageResult = await currentSelectedParams.notificationMessagesClient.SendMessageAsync(sendTextMessageOptions);
+            Response<SendMessageResult> sendTextMessageResult = await currentSelectedParams.NotificationMessagesClient.SendMessageAsync(sendTextMessageOptions);
 
             return sendTextMessageResult;
         }
@@ -375,6 +521,8 @@ namespace viewer.Controllers
             ViewData["ChannelRegistrationId"] = currentSelectedParams.ChannelRegistrationId;
             ViewData["PhoneNumber"] = currentSelectedParams.RecipientList[0];
             ViewData["ConversationId"] = environmentManagerService.ConversationId;
+            ViewData["UseAISdk"] = environmentManagerService.UseAISdk;
+            ViewData["DetectFunctionsOneByOne"] = environmentManagerService.DetectFunctionsOneByOne;
 
             return View("Chat");
         }
@@ -449,22 +597,22 @@ namespace viewer.Controllers
 
         private string GetElevateOrStartAIRequestBody(
             EnvironmentSpecificParams currentSelectedParams,
-            UserInitiatedMessageType? userInitiatedMessageType = default,
-            BusinessIntiatedMessageType? businessInitiatedMessageType = default,
+            Models.UserMessageKind? userInitiatedMessageType = default,
+            Models.BusinessMessageKind? businessInitiatedMessageType = default,
             string initialMessage = default,
             object template = default)
         {
             var businessInitiatedMessage = (businessInitiatedMessageType is null) ? default : new
             {
                 Content = initialMessage,
-                Type = businessInitiatedMessageType,
+                Kind = businessInitiatedMessageType.ToString(),
                 Template = template,
             };
 
             var userInitiatedMessage = (userInitiatedMessageType is null) ? default : new
             {
                 Content = initialMessage,
-                Type = userInitiatedMessageType,
+                Kind = userInitiatedMessageType.ToString(),
                 Template = template,
             };
 
@@ -480,19 +628,75 @@ namespace viewer.Controllers
                     Greeting = "Hi, I'm Kai, your virtual assistant. How can I help you today?",
                     Functions = PatientRegistrationMethods.GetFunctionDefinitions(),
                 },
-                BusinessInitiatedMessage = businessInitiatedMessage,
-                UserInitiatedMessage = userInitiatedMessage,
+                MessageToSend = businessInitiatedMessage,
+                MessageReceived = userInitiatedMessage,
             };
 
             var returnString = JsonConvert.SerializeObject(returnObj);
             return returnString;
         }
 
+        private static UserInitiatedConversationOptions GetUserInitiatedConversationOptions(
+            string initialMessage,
+            EnvironmentSpecificParams currentSelectedParams)
+        {
+            var aiAgentConfiguration = new AgentConfiguration(
+                "https://intelligent-routing-fhl.openai.azure.com/",
+                "test",
+                "Hi, I'm Kai, your virtual assistant. How can I help you today?",
+                "2023-07-01-preview");
+
+            foreach (var function in PatientRegistrationMethods.GetFunctionDefinitions())
+            {
+                aiAgentConfiguration.Functions.Add(function.ToAIFunctionDefinition());
+            }
+
+            var userInitiatedMessage = new UserInitiatedMessage(SDKNamespace.UserInitiatedMessageType.UserTextMessage);
+            userInitiatedMessage.Content = initialMessage;
+            userInitiatedMessage.Template = default;
+
+            var userInitiatedConversationOptions = new UserInitiatedConversationOptions(
+                channelRegistrationId: currentSelectedParams.ChannelRegistrationId,
+                to: currentSelectedParams.RecipientList.FirstOrDefault(),
+                agentConfiguration: aiAgentConfiguration,
+                userInitiatedMessage: userInitiatedMessage);
+            return userInitiatedConversationOptions;
+        }
+
+        private static BusinessInitiatedConversationOptions GetBusinessInitiatedConversationOptions(
+            SDKNamespace.BusinessInitiatedMessageType businessInitiatedMessageType,
+            EnvironmentSpecificParams currentSelectedParams,
+            string initialMessage = default,
+            MessageTemplate messageTemplate = default)
+        {
+            var aiAgentConfiguration = new AgentConfiguration(
+                "https://intelligent-routing-fhl.openai.azure.com/",
+                "test",
+                "Hi, I'm Kai, your virtual assistant. How can I help you today?",
+                "2023-07-01-preview");
+
+            foreach (var function in PatientRegistrationMethods.GetFunctionDefinitions())
+            {
+                aiAgentConfiguration.Functions.Add(function.ToAIFunctionDefinition());
+            }
+
+            var businessInitiatedMessage = new BusinessInitiatedMessage(businessInitiatedMessageType);
+            businessInitiatedMessage.Content = initialMessage;
+            businessInitiatedMessage.Template = messageTemplate;
+
+            var businessInitiatedConversationOptions = new BusinessInitiatedConversationOptions(
+                channelRegistrationId: currentSelectedParams.ChannelRegistrationId,
+                to: currentSelectedParams.RecipientList.FirstOrDefault(),
+                agentConfiguration: aiAgentConfiguration,
+                businessInitiatedMessage: businessInitiatedMessage);
+            return businessInitiatedConversationOptions;
+        }
+
         private string GetDeElevateToAIRequestBody(EnvironmentSpecificParams currentSelectedParams, string initialMessage)
         {
             var returnObj = new
             {
-                aiDisengagementReason = AIDisengagementReason.ConversationCompleted,
+                aiDisengagementReason = SDKNamespace.AIDisengagementReason.ConversationCompleted.ToString(),
             };
 
             return JsonConvert.SerializeObject(returnObj);
@@ -514,11 +718,9 @@ namespace viewer.Controllers
             };
             var bindings = new MessageTemplateWhatsAppBindings(
                 body: new[] { name.Name },
-                button: new[] {
-                    new KeyValuePair<string, MessageTemplateValueWhatsAppSubType>(yes.Name,
-                        MessageTemplateValueWhatsAppSubType.QuickReply),
-                    new KeyValuePair<string, MessageTemplateValueWhatsAppSubType>(no.Name,
-                        MessageTemplateValueWhatsAppSubType.QuickReply)
+                button: new Dictionary<string, MessageTemplateValueWhatsAppSubType> {
+                    { yes.Name, MessageTemplateValueWhatsAppSubType.QuickReply },
+                    { no.Name, MessageTemplateValueWhatsAppSubType.QuickReply }
                 });
 
             var issueResolutionTemplate = new MessageTemplate(templateName, templateLanguage, values, bindings);
